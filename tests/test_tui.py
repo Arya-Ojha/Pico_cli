@@ -30,6 +30,39 @@ def _render_text(event: LoopEvent) -> str:
 # ── thinking collapse / expand ──────────────────────────────────────
 
 
+async def test_rerender_preserves_scroll_position(tmp_path):
+    """Expanding a block while scrolled up must not jump to the bottom."""
+    from textual.widgets import RichLog
+
+    from pico_tui.app import PicoApp, ThinkingSegment, _SessionManager
+
+    from conftest import FakeProvider, make_session
+
+    app = PicoApp(_SessionManager(make_session(FakeProvider([]), tmp_path)))
+    async with app.run_test(size=(80, 24)) as pilot:
+        for i in range(40):
+            app._write_chat(Text(f"line {i}"))
+        await pilot.pause()
+        chat = app.query_one("#chat-log", RichLog)
+        chat.scroll_to(y=0, animate=False)
+        await pilot.pause()
+        await pilot.pause()  # scroll_to lands on the second tick
+        assert chat.scroll_y == 0
+
+        app._transcript.append(
+            ThinkingSegment(text="line one\nline two", id=1, final=True)
+        )
+        app._rerender_chat()
+        await pilot.pause()
+        await pilot.pause()
+        assert chat.scroll_y == 0
+
+        await app.action_toggle_thinking(1)  # expand in place
+        await pilot.pause()
+        await pilot.pause()
+        assert chat.scroll_y == 0
+
+
 def test_thinking_preview_single_line():
     from pico_tui.app import thinking_preview
     assert thinking_preview("hmm") == ("hmm", False)
@@ -54,12 +87,13 @@ def test_thinking_renderable_collapsed_and_expanded():
     assert isinstance(collapsed, str)
     assert "💭 thinking: line one" in collapsed
     assert "…" in collapsed
-    assert "@click=app.toggle_thinking(1)" in collapsed
-    # Expanding shows the full text instead.
+    assert collapsed.startswith("[@click=app.toggle_thinking(1)]")
+    # Expanding shows the full text instead, still clickable anywhere.
     app._thinking_expanded.add(1)
     expanded = app._thinking_renderable(seg)
-    assert isinstance(expanded, Text)
-    assert "line two" in expanded.plain
+    assert isinstance(expanded, str)
+    assert "line two" in expanded
+    assert expanded.startswith("[@click=app.toggle_thinking(1)]")
 
 
 # ── parse_line ──────────────────────────────────────────────────────
@@ -176,9 +210,9 @@ def test_render_event_edit_formats_code_fields():
 
 
 def test_render_event_other_tool_args_pretty_json():
-    event = _tool_request_event("read", {"path": "a.txt", "limit": 5})
+    event = _tool_request_event("grep", {"pattern": "foo", "limit": 5})
     result = _render_text(event)
-    assert '"path": "a.txt"' in result
+    assert '"pattern": "foo"' in result
     assert "\n" in result  # multi-line, not a one-line dict repr
 
 
@@ -214,15 +248,14 @@ def test_render_event_bash_result():
     assert "file1.txt" in result
 
 
-def test_render_event_read_result():
+def test_render_event_read_result_hidden():
     event = LoopEvent(
         kind="tool_result",
         tool_result=ToolResultPayload(
             tool_call_id="c1", name="read", content="hello world from file"
         ),
     )
-    result = _render_text(event)
-    assert "hello world from file" in result
+    assert render_event(event) is None
 
 
 def test_render_event_usage():

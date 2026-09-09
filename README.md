@@ -118,7 +118,7 @@ uv run picoCLI-chat
 | `/undo` | `Ctrl+Z` | Rewind to the previous user turn |
 | `/quit` | `Ctrl+Q` | Save the session and exit |
 
-Tool activity is rendered inline — bash commands echoed before running (green), and tool calls/results shown as color-coded panels (`read` blue, `write` yellow, `edit` magenta, `bash` green, `todo` cyan). The agent's todos also appear in a read-only panel on the right side of the chat while any exist.
+Tool activity is rendered inline — bash commands echoed before running (green), and tool calls/results shown as color-coded panels (`read` blue, `write` yellow, `edit` magenta, `bash` green, `todo` cyan). `todo` calls stay hidden (only the `todo` result shows); bash results collapse to a one-line success/error you can click to expand. The agent's todos also appear in a read-only panel on the right side of the chat while any exist.
 
 ## Where sessions live
 

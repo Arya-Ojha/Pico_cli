@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import re
 import sys
 
 from collections.abc import Callable
@@ -65,6 +66,36 @@ class ThinkingSegment:
     text: str
     id: int | None = None
     final: bool = False
+
+
+@dataclass
+class BashResultSegment:
+    """A bash outcome in the chat transcript.
+
+    Rendered collapsed as a one-line success/error summary; clicking
+    toggles it to the full command output.
+    """
+
+    body: str
+    exit_code: int | None = None
+    id: int | None = None
+    expanded: bool = False
+
+    @property
+    def success(self) -> bool:
+        """True when the command exited cleanly."""
+        return self.exit_code == 0
+
+
+def parse_bash_result(content: str) -> BashResultSegment:
+    """Split a bash tool result into output body + exit code."""
+    match = re.search(r"\[exit code: (-?\d+)\]\s*$", content)
+    if match is None:
+        return BashResultSegment(body=content.rstrip())
+    return BashResultSegment(
+        body=content[: match.start()].rstrip(),
+        exit_code=int(match.group(1)),
+    )
 
 
 def thinking_preview(full: str) -> tuple[str, bool]:
@@ -139,6 +170,13 @@ class _SessionManager:
                 on_event(ThinkingSegment(event.thinking))
             else:
                 _flush()
+                if (
+                    event.kind == "tool_result"
+                    and event.tool_result is not None
+                    and event.tool_result.name == "bash"
+                ):
+                    on_event(parse_bash_result(event.tool_result.content))
+                    continue
                 rendered = render_event(event)
                 if rendered is not None:
                     on_event(rendered)
@@ -276,6 +314,8 @@ class PicoApp(App[None]):
         self._thinking_seq = 0
         self._thinking_expanded: set[int] = set()
         self._thinking_rerender_pending = False
+        self._bash_seq = 0
+        self._bash_expanded: set[int] = set()
 
     def _placeholder(self) -> str:
         return "pico>  (type a prompt, or /help for commands)"
@@ -283,7 +323,11 @@ class PicoApp(App[None]):
     def compose(self) -> ComposeResult:
         yield Header()
         with Horizontal(id="main-row"):
-            yield RichLog(id="chat-log", highlight=True, markup=True, wrap=True)
+            chat_log = RichLog(id="chat-log", highlight=True, markup=True, wrap=True)
+            # No link coloring or hover highlights: @click spans keep exactly
+            # the styles below, and clicks still fire (meta is untouched).
+            chat_log.auto_links = False
+            yield chat_log
             yield TodoPanel(id="todo-panel")
         yield Input(
             id="input-bar",
@@ -476,6 +520,14 @@ class PicoApp(App[None]):
         the log order matches the transcript order.
         """
         self._finalize_thinking()
+        if isinstance(renderable, BashResultSegment):
+            self._bash_seq += 1
+            renderable.id = self._bash_seq
+            self._transcript.append(renderable)
+            self.query_one("#chat-log", RichLog).write(
+                self._bash_renderable(renderable)
+            )
+            return
         self._transcript.append(renderable)
         self.query_one("#chat-log", RichLog).write(renderable)
 
@@ -517,29 +569,89 @@ class PicoApp(App[None]):
             self._rerender_chat()
 
     def _thinking_renderable(self, segment: ThinkingSegment) -> object:
-        """Live (full text), collapsed one-line, or expanded text block."""
+        """Live (full text), collapsed one-line, or expanded text block.
+
+        Collapsed and expanded lines are wrapped end-to-end in the toggle
+        click target, so clicking anywhere on the text expands/collapses.
+        """
         if not segment.final:
             # Still streaming: show the full accumulated text.
             return Text(segment.text, style="dim italic")
         if segment.id is not None and segment.id in self._thinking_expanded:
-            return Text(segment.text, style="dim italic")
+            return (
+                f"[@click=app.toggle_thinking({segment.id})]"
+                f"[dim italic]{escape(segment.text)} ▾ hide[/][/]"
+            )
         preview, truncated = thinking_preview(segment.text)
         ellipsis = " …" if truncated else ""
         return (
+            f"[@click=app.toggle_thinking({segment.id})]"
             f"[dim italic]💭 thinking: {escape(preview)}{ellipsis} "
-            f"[@click=app.toggle_thinking({segment.id})]▸ show thinking[/][/]"
+            "▸ show thinking[/][/]"
+        )
+
+    def _bash_renderable(self, segment: BashResultSegment) -> object:
+        """Collapsed one-line summary, or the full output when expanded.
+
+        Both states are wrapped end-to-end in the toggle click target, so
+        clicking anywhere on the text expands/collapses.
+        """
+        if segment.id is not None and segment.id in self._bash_expanded:
+            return (
+                f"[@click=app.toggle_bash({segment.id})]"
+                f"[dim]{escape(segment.body or '(no output)')} ▾ hide[/][/]"
+            )
+        if segment.success:
+            return (
+                f"[@click=app.toggle_bash({segment.id})]"
+                "[dim]✓ bash success ▸ show output[/][/]"
+            )
+        code = f" (exit {segment.exit_code})" if segment.exit_code is not None else ""
+        return (
+            f"[@click=app.toggle_bash({segment.id})]"
+            f"[red]✗ bash error{code} ▸ show error[/][/]"
         )
 
     def _rerender_chat(self) -> None:
         """Redraw the whole chat log from the transcript (thinking blocks
-        rendered collapsed or expanded per current toggle state)."""
+        and bash results rendered collapsed or expanded per toggle state).
+
+        The scroll position is preserved so expanding/collapsing a block
+        doesn't yank the view to the bottom — unless the view was already
+        pinned to the bottom (e.g. live streaming), in which case it keeps
+        following new output.
+        """
         chat_log = self.query_one("#chat-log", RichLog)
-        chat_log.clear()
-        for item in self._transcript:
-            if isinstance(item, ThinkingSegment):
-                chat_log.write(self._thinking_renderable(item))
-            else:
-                chat_log.write(item)
+        follow = chat_log.is_vertical_scroll_end
+        scroll_y = chat_log.scroll_y
+        # Suspend auto-scroll while rewriting: every write otherwise queues
+        # a deferred scroll-to-end that would fire after (and beat) the
+        # restore below.
+        auto_scroll = chat_log.auto_scroll
+        chat_log.auto_scroll = False
+        try:
+            chat_log.clear()
+            for item in self._transcript:
+                if isinstance(item, ThinkingSegment):
+                    chat_log.write(self._thinking_renderable(item))
+                elif isinstance(item, BashResultSegment):
+                    chat_log.write(self._bash_renderable(item))
+                else:
+                    chat_log.write(item)
+        finally:
+            chat_log.auto_scroll = auto_scroll
+        if follow:
+            chat_log.scroll_end(animate=False)
+        else:
+            chat_log.scroll_to(y=scroll_y, animate=False)
+
+    async def action_toggle_bash(self, block_id: int) -> None:
+        """Expand or collapse a bash result when its line is clicked."""
+        if block_id in self._bash_expanded:
+            self._bash_expanded.discard(block_id)
+        else:
+            self._bash_expanded.add(block_id)
+        self._rerender_chat()
 
     async def action_toggle_thinking(self, block_id: int) -> None:
         """Expand or collapse a thinking block when its line is clicked."""

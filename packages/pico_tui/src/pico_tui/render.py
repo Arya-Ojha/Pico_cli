@@ -43,6 +43,8 @@ def render_event(event: LoopEvent):  # -> RenderableType (kept loose for mypy si
         return Text(event.thinking, style="dim italic")
     if event.kind == "tool_request" and event.tool_request is not None:
         call = event.tool_request.tool_call
+        if call.name == "todo":
+            return None  # todo calls stay hidden; only the result is shown
         color = _TOOL_COLORS.get(call.name, "cyan")
         if call.name == "bash":
             cmd = call.arguments.get("command", "")
@@ -62,6 +64,15 @@ def render_event(event: LoopEvent):  # -> RenderableType (kept loose for mypy si
         )
     if event.kind == "tool_result" and event.tool_result is not None:
         result = event.tool_result
+        if result.name == "todo":
+            return Panel(
+                result.content,
+                title="[bold cyan]todo[/]",
+                border_style="cyan",
+                title_align="left",
+            )
+        if result.name == "read":
+            return None  # read results stay hidden; only the call is shown
         color = _TOOL_COLORS.get(result.name, "dim cyan")
         if result.name == "bash":
             return Panel(
