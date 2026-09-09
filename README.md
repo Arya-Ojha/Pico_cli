@@ -111,7 +111,7 @@ uv run picoCLI-chat
 | Slash command | Key | Action |
 |---|---|---|
 | `/help` | `F1` | Show help |
-| `/history` | `Ctrl+H` | List session nodes (with indices for `/fork`) |
+| `/history` | `Ctrl+H` | Browse session nodes — pick one to jump to |
 | `/compact [text]` | `Ctrl+K` | Compact context (optionally with steering text) |
 | `/fork <n or id>` | — | Rewind to a node and start a new branch |
 | `/undo` | `Ctrl+Z` | Rewind to the previous user turn |

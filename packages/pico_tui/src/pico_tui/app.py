@@ -30,6 +30,7 @@ from pico_sdk.config import load_settings, save_settings
 from pico_sdk.providers import FREE_MODEL_ALIAS, create_provider, resolve_free_model
 
 from .commands import Command, Prompt, parse_line
+from .history_picker import HistoryPickerScreen
 from .model_picker import ModelPickerScreen
 from .render import _truncate, render_event
 from .status_bar import ContextStatusBar
@@ -37,7 +38,7 @@ from .status_bar import ContextStatusBar
 HELP_TEXT = """\
 [bold]Commands (slash or key binding):[/]
   [cyan]/help, F1[/]        show this help
-  [cyan]/history, Ctrl+H[/] list session nodes (with indices for /fork)
+  [cyan]/history, Ctrl+H[/] list session nodes — pick one to jump to
   [cyan]/compact, Ctrl+K[/] summarise older turns (optionally with steering text)
   [cyan]/model <name>[/]   change the LLM model for this session
                           (/model alone opens an interactive model picker)
@@ -134,6 +135,22 @@ class _SessionManager:
                 if rendered is not None:
                     on_event(rendered)
         _flush()
+
+    def history_entries(self) -> list[dict]:
+        """Return one dict per node on the active branch for the picker."""
+        branch = self.session.session.active_branch()
+        entries: list[dict] = []
+        for i, node in enumerate(branch):
+            entries.append(
+                {
+                    "index": i,
+                    "node_id": node.id,
+                    "kind": node.payload.kind,
+                    "summary": _truncate(_snippet(node.payload), 80),
+                    "is_current": node.id == self.session.session.active_leaf_id,
+                }
+            )
+        return entries
 
     def history_text(self) -> Table | None:
         """Return a Rich Table of nodes, or None if session is empty."""
@@ -301,11 +318,7 @@ class PicoApp(App[None]):
         elif cmd.kind == "help":
             self._write_chat(Panel(HELP_TEXT, title="Help"))
         elif cmd.kind == "history":
-            hist = self._mgr.history_text()
-            if hist is None:
-                self._write_chat(Text("(empty session)", style="dim"))
-            else:
-                self._write_chat(hist)
+            await self._show_history_picker()
         elif cmd.kind == "undo":
             msg = self._mgr.undo()
             self._write_chat(Text(msg or "(undo)", style="dim"))
@@ -324,6 +337,24 @@ class PicoApp(App[None]):
         elif cmd.kind == "fork":
             msg = self._mgr.fork(cmd.arg)
             self._write_chat(Text(msg, style="dim"))
+
+    # -- history picker --
+
+    async def _show_history_picker(self) -> None:
+        """Show the interactive history picker; the pick forks the session."""
+        entries = self._mgr.history_entries()
+        if not entries:
+            self._write_chat(Text("(empty session)", style="dim"))
+            return
+
+        def _on_selected(index: int | None) -> None:
+            if index is None:
+                return
+            msg = self._mgr.fork(str(index))
+            self._write_chat(Text(msg, style="dim"))
+            self._update_status_bar()
+
+        self.push_screen(HistoryPickerScreen(entries), callback=_on_selected)
 
     # -- model picker --
 
