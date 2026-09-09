@@ -10,7 +10,7 @@ dependencies = [
 ]
 
 [project.scripts]
-pico-chat-learn = "pico_tui.app:main"
+picoCLI-chat = "pico_tui.app:main"
 
 [build-system]
 requires = ["hatchling"]

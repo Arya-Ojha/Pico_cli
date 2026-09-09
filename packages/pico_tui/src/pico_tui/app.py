@@ -16,14 +16,12 @@ from rich.table import Table
 from rich.text import Text
 
 from textual.app import App, ComposeResult
-from textual.binding import Binding
 from textual.widgets import Footer, Header, Input, RichLog
 
 from pico_sdk import (
     AgentSession,
     AssistantPayload,
     CompactionSummaryPayload,
-    Mode,
     ToolRequestPayload,
     ToolResultPayload,
     UserPayload,
@@ -45,9 +43,7 @@ HELP_TEXT = """\
                           (/model alone opens an interactive model picker)
   [cyan]/fork <n|id>[/]     rewind to a node and start a new branch
   [cyan]/undo, Ctrl+Z[/]    rewind to the previous user turn
-  [cyan]/learn, Tab[/]      toggle between act mode and learn mode
   [cyan]/quit, Ctrl+Q[/]    save and exit
-Messages you send go in whichever mode is active; press Tab to switch.
 💭 thinking streams in full while the model thinks, then collapses to one
 line — click '▸ show thinking' to expand or collapse it again.\
 """
@@ -99,7 +95,7 @@ class _SessionManager:
         self.session = session
 
     async def stream(
-        self, prompt: str, on_event: Callable[[object], None], *, mode: Mode = "act"
+        self, prompt: str, on_event: Callable[[object], None]
     ) -> None:
         """Consume the agent stream, calling on_event for each renderable.
 
@@ -126,7 +122,7 @@ class _SessionManager:
                     on_event(Text("".join(chunks)))
             segments.clear()
 
-        async for event in self.session.stream(prompt, mode=mode):
+        async for event in self.session.stream(prompt):
             if event.kind == "text":
                 _append("text", event.text)
             elif event.kind == "thinking":
@@ -225,15 +221,12 @@ class PicoApp(App[None]):
         ("ctrl+z", "undo", "Undo"),
         ("ctrl+k", "compact", "Compact"),
         ("f1", "show_help", "Help"),
-        # Priority so it wins over the Screen's Tab focus-traversal binding.
-        Binding("tab", "toggle_learn", "Mode", priority=True),
     ]
 
     def __init__(self, mgr: _SessionManager) -> None:
         super().__init__()
         self._mgr = mgr
         self._streaming = False
-        self._mode: Mode = "act"
         # Everything written to the chat log, in order. Thinking blocks are
         # stored as ThinkingSegment so they can collapse/expand on click.
         self._transcript: list[object] = []
@@ -241,26 +234,8 @@ class PicoApp(App[None]):
         self._thinking_expanded: set[int] = set()
         self._thinking_rerender_pending = False
 
-    # -- mode helpers --
-
-    def _mode_badge(self) -> str:
-        """The visible mode badge: '[learn]' or '[act]'."""
-        return "[learn]" if self._mode == "learn" else "[act]"
-
     def _placeholder(self) -> str:
-        return f"pico>  {self._mode_badge()}  (type a prompt, or /help for commands)"
-
-    def get_key_display(self, binding: Binding) -> str:
-        """Show the mode badge where the footer normally shows the Tab key."""
-        if binding.action == "toggle_learn":
-            return self._mode_badge()
-        return super().get_key_display(binding)
-
-    def action_toggle_learn(self) -> None:
-        """Flip between act and learn mode and reflect it in the UI."""
-        self._mode = "act" if self._mode == "learn" else "learn"
-        self.refresh_bindings()  # footer re-reads get_key_display for the badge
-        self.query_one("#input-bar", Input).placeholder = self._placeholder()
+        return "pico>  (type a prompt, or /help for commands)"
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -349,8 +324,6 @@ class PicoApp(App[None]):
         elif cmd.kind == "fork":
             msg = self._mgr.fork(cmd.arg)
             self._write_chat(Text(msg, style="dim"))
-        elif cmd.kind == "learn":
-            self.action_toggle_learn()
 
     # -- model picker --
 
@@ -398,13 +371,13 @@ class PicoApp(App[None]):
     # -- prompt to agent streaming --
 
     async def _run_prompt(self, text: str) -> None:
-        """Send a user prompt to the agent in the current mode and stream it."""
+        """Send a user prompt to the agent and stream it."""
         self._write_chat(Text(f"> {text}", style="bold"))
         self._streaming = True
         self._update_status_bar()
-        asyncio.create_task(self._stream_worker(text, self._mode))
+        asyncio.create_task(self._stream_worker(text))
 
-    async def _stream_worker(self, prompt: str, mode: Mode) -> None:
+    async def _stream_worker(self, prompt: str) -> None:
         """Background task that consumes the agent stream."""
         try:
             def _write(renderable: object) -> None:
@@ -413,7 +386,7 @@ class PicoApp(App[None]):
                 else:
                     self._write_chat(renderable)
 
-            await self._mgr.stream(prompt, _write, mode=mode)
+            await self._mgr.stream(prompt, _write)
         except Exception as exc:
             self._write_chat(
                 Panel(str(exc), title="error", border_style="red")
@@ -529,7 +502,7 @@ class PicoApp(App[None]):
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="pico-chat", description="Interactive pico session (Textual TUI)."
+        prog="picoCLI-chat", description="Interactive pico session (Textual TUI)."
     )
     parser.add_argument(
         "--no-bash",
@@ -544,11 +517,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--session", default=None, help="Resume an existing session by id."
-    )
-    parser.add_argument(
-        "--strict-learn",
-        action="store_true",
-        help="Harden learn mode: block writes outside the lessons directory.",
     )
     args = parser.parse_args(argv)
 
@@ -571,7 +539,6 @@ def main(argv: list[str] | None = None) -> int:
             settings=settings,
             working_dir=args.cwd,
             allow_bash=not args.no_bash,
-            strict_learn=args.strict_learn,
         )
     else:
         session = AgentSession(
@@ -580,7 +547,6 @@ def main(argv: list[str] | None = None) -> int:
             settings=settings,
             working_dir=args.cwd,
             allow_bash=not args.no_bash,
-            strict_learn=args.strict_learn,
         )
     mgr = _SessionManager(session)
     app = PicoApp(mgr)

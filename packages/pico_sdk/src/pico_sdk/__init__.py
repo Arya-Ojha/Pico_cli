@@ -4,7 +4,6 @@ from pico_core.fsm import AgentState, LoopEvent, RunResult
 from pico_core.session import (
     AssistantPayload,
     CompactionSummaryPayload,
-    Mode,
     Node,
     Session,
     ToolRequestPayload,
@@ -14,7 +13,7 @@ from pico_core.session import (
 
 from .config import Settings, load_settings
 from .extensions import ExtensionManager
-from .session import DEFAULT_SYSTEM_PROMPT, LEARN_SYSTEM_PROMPT, AgentSession
+from .session import DEFAULT_SYSTEM_PROMPT, AgentSession
 
 __all__ = [
     "AgentSession",
@@ -22,11 +21,9 @@ __all__ = [
     "Settings",
     "load_settings",
     "DEFAULT_SYSTEM_PROMPT",
-    "LEARN_SYSTEM_PROMPT",
     "AgentState",
     "LoopEvent",
     "RunResult",
-    "Mode",
     "AssistantPayload",
     "CompactionSummaryPayload",
     "Node",

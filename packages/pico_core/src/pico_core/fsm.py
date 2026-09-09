@@ -25,7 +25,6 @@ from .session import (
     AssistantBlock,
     AssistantPayload,
     CompactionSummaryPayload,
-    Mode,
     Node,
     Session,
     ToolRequestPayload,
@@ -119,11 +118,11 @@ class AgentLoop:
 
     # -- public -------------------------------------------------------------
 
-    async def run(self, prompt: str, *, mode: Mode = "act") -> RunResult:
+    async def run(self, prompt: str) -> RunResult:
         """Run the full loop and return the final result."""
         text_parts: list[str] = []
         try:
-            async for event in self.stream(prompt, mode=mode):
+            async for event in self.stream(prompt):
                 if event.kind == "text":
                     text_parts.append(event.text)
         except Exception as exc:  # noqa: BLE001 - surface as error state
@@ -138,12 +137,8 @@ class AgentLoop:
             text="".join(text_parts), state=self.state, session=self.session
         )
 
-    async def stream(self, prompt: str, *, mode: Mode = "act") -> AsyncIterator[LoopEvent]:
-        """Run the loop, yielding observable events as they happen.
-
-        ``mode`` stamps the appended user payload; the system prompt in use for
-        this turn is whatever the caller has assigned to ``self.system_prompt``.
-        """
+    async def stream(self, prompt: str) -> AsyncIterator[LoopEvent]:
+        """Run the loop, yielding observable events as they happen."""
         self._set_state(AgentState.IDLE)
         yield self._state_event()
         if self._hooks is not None and not self._started:
@@ -151,7 +146,7 @@ class AgentLoop:
             self._started = True
 
         self.session.append(
-            self.session.active_leaf_id, UserPayload(content=prompt, mode=mode)
+            self.session.active_leaf_id, UserPayload(content=prompt)
         )
 
         while True:

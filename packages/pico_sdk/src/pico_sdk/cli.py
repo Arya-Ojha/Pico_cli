@@ -9,7 +9,6 @@ import sys
 from pathlib import Path
 
 from pico_core.fsm import LoopEvent
-from pico_core.session import Mode
 
 from .config import load_settings
 from .providers import FREE_MODEL_ALIAS, create_provider, resolve_free_model
@@ -30,7 +29,7 @@ def format_event(event: LoopEvent) -> str | None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="pico", description="A headless coding agent.")
+    parser = argparse.ArgumentParser(prog="picoCLI", description="A headless coding agent.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     run = sub.add_parser("run", help="Run the agent on a prompt.")
@@ -43,16 +42,6 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--model", default=None, help="Override the configured model.")
     run.add_argument("--cwd", default=None, help="Working directory (default: current).")
     run.add_argument("--session", default=None, help="Resume an existing session by id.")
-    run.add_argument(
-        "--learn",
-        action="store_true",
-        help="Run the prompt in learn mode (guide instead of doing).",
-    )
-    run.add_argument(
-        "--strict-learn",
-        action="store_true",
-        help="Harden learn mode: block writes outside the lessons directory.",
-    )
     return parser
 
 
@@ -75,7 +64,6 @@ async def run_command(args: argparse.Namespace) -> int:
         if resolved:
             model = resolved
             sys.stdout.write(f"using free model: {model}\n")
-    mode: Mode = "learn" if args.learn else "act"
     if args.session:
         session = AgentSession.load(
             args.session,
@@ -84,7 +72,6 @@ async def run_command(args: argparse.Namespace) -> int:
             settings=settings,
             working_dir=args.cwd,
             allow_bash=not args.no_bash,
-            strict_learn=args.strict_learn,
         )
     else:
         session = AgentSession(
@@ -93,7 +80,6 @@ async def run_command(args: argparse.Namespace) -> int:
             settings=settings,
             working_dir=args.cwd,
             allow_bash=not args.no_bash,
-            strict_learn=args.strict_learn,
         )
     prompt = " ".join(args.prompt)
     if prompt.startswith("/compact"):
@@ -102,7 +88,7 @@ async def run_command(args: argparse.Namespace) -> int:
         sys.stdout.write("compacted context\n")
         session.save()
         return 0
-    async for event in session.stream(prompt, mode=mode):
+    async for event in session.stream(prompt):
         rendered = format_event(event)
         if rendered:
             sys.stdout.write(rendered)

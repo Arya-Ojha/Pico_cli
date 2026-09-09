@@ -18,9 +18,6 @@ _TOOL_COLORS: dict[str, str] = {
     "read": "bright_blue",
     "write": "yellow",
     "edit": "magenta",
-    "lesson": "red",
-    "fetch": "cyan",
-    "search": "blue",
 }
 
 

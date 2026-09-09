@@ -46,7 +46,7 @@ async def test_stream_preserves_wire_order(tmp_path):
 
         # AgentSession.stream delegates to loop.stream; we bypass the FSM and
         # call the provider directly through a minimal shim.
-        def stream(self, prompt, *, mode="act"):
+        def stream(self, prompt):
             async def _gen():
                 request = AICallRequest(model="m", messages=[])
                 async for ev in self.provider.stream(request):

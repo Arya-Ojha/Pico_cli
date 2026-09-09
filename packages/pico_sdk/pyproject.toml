@@ -6,7 +6,7 @@ requires-python = ">=3.12"
 dependencies = ["pico-core", "pico-ai", "pydantic>=2"]
 
 [project.scripts]
-pico-learn = "pico_sdk.cli:main"
+picoCLI = "pico_sdk.cli:main"
 
 [build-system]
 requires = ["hatchling"]
