@@ -8,6 +8,7 @@ from typing import Any
 
 from pico_core.fsm import AgentLoop, LoopEvent, RunResult
 from pico_core.session import Session
+from pico_core.todos import TodoList, TodoTool
 from pico_core.tools import BashTool, EditTool, ReadTool, ToolRegistry, WriteTool
 
 from .config import Settings, load_settings
@@ -16,7 +17,10 @@ from .extensions import ExtensionManager
 DEFAULT_SYSTEM_PROMPT = (
     "You are pico, a coding agent. You can read, write, and edit files, and run "
     "bash commands. Work autonomously to complete the user's task, then report "
-    "what you did."
+    "what you did. For multi-step tasks, track progress with the todo tool "
+    "(add one todo per step, mark each in_progress while you work on it and "
+    "completed when done). The run only ends once every todo is completed — "
+    "do not stop early with unfinished todos."
 )
 
 
@@ -44,6 +48,7 @@ class AgentSession:
 
         self.session = session or (Session(id=session_id) if session_id else Session())
         self.tools = ToolRegistry()
+        self.todos = TodoList()
         self._register_core_tools(allow_bash)
 
         self.loop = AgentLoop(
@@ -87,6 +92,7 @@ class AgentSession:
             WriteTool(self.working_dir),
             EditTool(self.working_dir),
             BashTool(self.working_dir, enabled=allow_bash),
+            TodoTool(self.todos),
         ):
             self.tools.register(tool)
 

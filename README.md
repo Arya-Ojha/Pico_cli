@@ -15,6 +15,7 @@ pico_ai ─► pico_core ─► pico_sdk ─► pico_tui
 - **Headless CLI** — `picoCLI run "do a task"` completes a coding task end-to-end with a single prompt.
 - **Interactive TUI** — `picoCLI-chat` is a full terminal UI (Textual + Rich) for back-and-forth sessions.
 - **Four core tools** — `read`, `write`, `edit` (search/replace patches), and `bash`.
+- **Todo tracking** — the agent tracks multi-step work with a `todo` tool (add / update / list / clear); the TUI shows the in-memory list in a read-only side panel that appears once the first todo exists. A run only ends once every todo is completed — stopping early nudges the agent back in. When the run ends clean, the list is cleared for the next run (a run stopped by the stuck-model guard keeps its open todos).
 - **One-way LLM gateway** — all models reached through a single streaming OpenRouter client behind one unified "AI call" shape. Responses stream token-by-token.
 - **Reasoning & usage** — thinking blocks are preserved in the transcript; token counts are tracked.
 - **Session tree** — sessions are persisted as append-only trees of nodes; you can resume, rewind, and fork branches.
@@ -117,7 +118,7 @@ uv run picoCLI-chat
 | `/undo` | `Ctrl+Z` | Rewind to the previous user turn |
 | `/quit` | `Ctrl+Q` | Save the session and exit |
 
-Tool activity is rendered inline — bash commands echoed before running (green), and tool calls/results shown as color-coded panels (`read` blue, `write` yellow, `edit` magenta, `bash` green).
+Tool activity is rendered inline — bash commands echoed before running (green), and tool calls/results shown as color-coded panels (`read` blue, `write` yellow, `edit` magenta, `bash` green, `todo` cyan). The agent's todos also appear in a read-only panel on the right side of the chat while any exist.
 
 ## Where sessions live
 

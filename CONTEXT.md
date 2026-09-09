@@ -12,6 +12,7 @@ The domain vocabulary for **pico**, a Python CLI coding agent inspired by Pi's m
 - **Fork** — rewinding to an earlier node and starting a new branch from it (for example, after a change that broke the codebase).
 - **Turn** — one user message plus the agent's full response to it, including any tool requests it makes.
 - **Tool** — a capability the agent can invoke. The core tools are **read**, **write**, **edit**, and **bash**.
+- **Todo tool** — the agent-facing `todo` tool (actions `add` / `update` / `list` / `clear`) backed by a shared in-memory **todo list**; statuses are `pending`, `in_progress`, `completed`.
 - **Tool request** — the agent asking to run a tool.
 - **Tool result** — the output returned by running a tool.
 - **Compaction** — summarising older context so the session fits within the model's context window.

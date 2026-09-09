@@ -31,6 +31,7 @@ from .session import (
     ToolResultPayload,
     UserPayload,
 )
+from .todos import TodoItem, TodoTool
 from .tools import ToolRegistry
 
 
@@ -80,6 +81,12 @@ class HookSink(Protocol):
 Summarizer = Callable[[list[Node], str], AsyncIterator[StreamEvent]]
 
 
+# A run only ends once every todo is completed. When the model stops with
+# unfinished todos, the loop nudges it back in instead of finishing — capped
+# so a stuck model still terminates instead of burning calls forever.
+MAX_TODO_NUDGES = 5
+
+
 async def _collect_text(stream: AsyncIterator[StreamEvent]) -> str:
     parts: list[str] = []
     async for event in stream:
@@ -115,6 +122,7 @@ class AgentLoop:
         self._hooks = hooks
         self.state = AgentState.IDLE
         self._started = False
+        self._todo_nudges = 0
 
     # -- public -------------------------------------------------------------
 
@@ -183,12 +191,27 @@ class AgentLoop:
                 yield LoopEvent(kind="usage", usage=usage)
 
             if not tool_calls:
+                unfinished = self._unfinished_todos()
+                if unfinished and self._todo_nudges < MAX_TODO_NUDGES:
+                    self._todo_nudges += 1
+                    self.session.append(
+                        self.session.active_leaf_id,
+                        UserPayload(content=_todo_nudge(unfinished)),
+                    )
+                    continue
+                self._todo_nudges = 0
+                if not unfinished:
+                    self._clear_finished_todos()
                 self._set_state(AgentState.DONE)
                 yield self._state_event()
                 return
 
             self._set_state(AgentState.TOOL_EXECUTING)
             yield self._state_event()
+
+            if any(c.name == "todo" for c in tool_calls):
+                # Progress on the list — reset the stuck-model counter.
+                self._todo_nudges = 0
 
             for tool_call in tool_calls:
                 request_payload = ToolRequestPayload(tool_call=tool_call)
@@ -320,6 +343,23 @@ class AgentLoop:
 
     # -- tool execution -----------------------------------------------------
 
+    def _unfinished_todos(self) -> list[TodoItem]:
+        """Return every todo that is not completed (empty when no tracker)."""
+        tool = self.tools.get("todo")
+        if not isinstance(tool, TodoTool):
+            return []
+        return [i for i in tool.todos.all() if i.status != "completed"]
+
+    def _clear_finished_todos(self) -> None:
+        """Drop the todo list once a run ends with everything completed.
+
+        Only fires when nothing is unfinished, so a run stopped by the
+        nudge cap keeps its open todos visible instead of losing them.
+        """
+        tool = self.tools.get("todo")
+        if isinstance(tool, TodoTool) and len(tool.todos) > 0:
+            tool.todos.clear_completed()
+
     async def _execute_tool(self, tool_call: ToolCall) -> ToolResultPayload:
         tool = self.tools.get(tool_call.name)
         if tool is None:
@@ -358,6 +398,16 @@ class AgentLoop:
 
     def _state_event(self) -> LoopEvent:
         return LoopEvent(kind="state", state=self.state)
+
+
+def _todo_nudge(unfinished: list[TodoItem]) -> str:
+    """Build the keep-going message appended when the model stops early."""
+    items = "\n".join(f"[{t.id}] {t.status} — {t.text}" for t in unfinished)
+    return (
+        f"[todos] {len(unfinished)} unfinished todo(s) — do not stop yet. "
+        "Keep working, updating todos as you go, until every todo is completed:\n"
+        f"{items}"
+    )
 
 
 def _render_node(node: Node) -> str:

@@ -16,6 +16,7 @@ from rich.table import Table
 from rich.text import Text
 
 from textual.app import App, ComposeResult
+from textual.containers import Horizontal
 from textual.widgets import Footer, Header, Input, RichLog
 
 from pico_sdk import (
@@ -34,6 +35,7 @@ from .history_picker import HistoryPickerScreen
 from .model_picker import ModelPickerScreen
 from .render import _truncate, render_event
 from .status_bar import ContextStatusBar
+from .todo_panel import TodoPanel
 
 HELP_TEXT = """\
 [bold]Commands (slash or key binding):[/]
@@ -96,7 +98,10 @@ class _SessionManager:
         self.session = session
 
     async def stream(
-        self, prompt: str, on_event: Callable[[object], None]
+        self,
+        prompt: str,
+        on_event: Callable[[object], None],
+        on_todo: Callable[[], None] | None = None,
     ) -> None:
         """Consume the agent stream, calling on_event for each renderable.
 
@@ -108,6 +113,9 @@ class _SessionManager:
         Thinking is streamed *live* as ThinkingSegment events: the on_event
         consumer accumulates them and collapses the segment to one clickable
         line once it ends (see PicoApp._write_thinking).
+
+        ``on_todo`` fires after every ``todo`` tool result so the UI can
+        refresh the side panel live, mid-turn.
         """
         segments: list[list] = []  # ordered [kind, [chunks]] entries
 
@@ -134,6 +142,13 @@ class _SessionManager:
                 rendered = render_event(event)
                 if rendered is not None:
                     on_event(rendered)
+                if (
+                    on_todo is not None
+                    and event.kind == "tool_result"
+                    and event.tool_result is not None
+                    and event.tool_result.name == "todo"
+                ):
+                    on_todo()
         _flush()
 
     def history_entries(self) -> list[dict]:
@@ -213,12 +228,23 @@ class PicoApp(App[None]):
     """The pico interactive agent TUI."""
 
     CSS = """
+    #main-row {
+        height: 1fr;
+    }
     #chat-log {
+        width: 1fr;
         height: 1fr;
         border: none;
     }
     #chat-log:focus {
         border: none;
+    }
+    #todo-panel {
+        width: 32;
+        height: 1fr;
+        border-left: solid $primary;
+        background: $surface;
+        padding: 0 1;
     }
     #input-bar {
         margin: 0 1;
@@ -256,7 +282,9 @@ class PicoApp(App[None]):
 
     def compose(self) -> ComposeResult:
         yield Header()
-        yield RichLog(id="chat-log", highlight=True, markup=True, wrap=True)
+        with Horizontal(id="main-row"):
+            yield RichLog(id="chat-log", highlight=True, markup=True, wrap=True)
+            yield TodoPanel(id="todo-panel")
         yield Input(
             id="input-bar",
             placeholder=self._placeholder(),
@@ -268,6 +296,15 @@ class PicoApp(App[None]):
         """Focus the input bar on start and initialize status bar."""
         self.query_one("#input-bar", Input).focus()
         self._update_status_bar()
+        self._refresh_todo_panel()
+
+    def _refresh_todo_panel(self) -> None:
+        """Re-render the todo side panel (auto-hides while empty)."""
+        try:
+            panel = self.query_one("#todo-panel", TodoPanel)
+            panel.update_todos(self._mgr.session.todos.all())
+        except Exception:
+            pass
 
     def _update_status_bar(self) -> None:
         """Update the status bar with current session info."""
@@ -417,7 +454,9 @@ class PicoApp(App[None]):
                 else:
                     self._write_chat(renderable)
 
-            await self._mgr.stream(prompt, _write)
+            await self._mgr.stream(
+                prompt, _write, on_todo=self._refresh_todo_panel
+            )
         except Exception as exc:
             self._write_chat(
                 Panel(str(exc), title="error", border_style="red")
@@ -426,6 +465,7 @@ class PicoApp(App[None]):
             self._finalize_thinking()
             self._streaming = False
             self._update_status_bar()
+            self._refresh_todo_panel()
 
     # -- helpers --
 
