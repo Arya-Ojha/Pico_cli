@@ -15,11 +15,13 @@ from .todos import TodoItem, TodoList, TodoTool, format_todos
 from .tools import (
     BashTool,
     EditTool,
+    FetchTool,
     GrepTool,
     ReadTool,
     Tool,
     ToolOutcome,
     ToolRegistry,
+    WebSearchTool,
     WriteTool,
 )
 
@@ -38,11 +40,13 @@ __all__ = [
     "UserPayload",
     "BashTool",
     "EditTool",
+    "FetchTool",
     "GrepTool",
     "ReadTool",
     "Tool",
     "ToolOutcome",
     "ToolRegistry",
+    "WebSearchTool",
     "WriteTool",
     "TodoItem",
     "TodoList",

@@ -1,4 +1,4 @@
-"""The core tools: read, write, edit, bash, grep.
+"""The core tools: read, write, edit, bash, grep, fetch, websearch.
 
 Each tool operates against a working directory. Bash runs unsandboxed and is
 disabled unless an opt-in flag is set. Tool errors (missing file, non-zero exit)
@@ -9,10 +9,14 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
+import html as _html
 import re
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Protocol
+from urllib.parse import urlparse
 
+import httpx
 from pydantic import BaseModel
 
 from pico_ai.types import ToolDefinition
@@ -276,6 +280,222 @@ class GrepTool:
         if not matches:
             return ToolOutcome(content="(no matches)")
         return ToolOutcome(content="\n".join(matches))
+
+
+class _TextExtractor(HTMLParser):
+    """Collect visible text from HTML, skipping script/style content."""
+
+    _SKIP_TAGS = frozenset({"script", "style", "noscript"})
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._chunks: list[str] = []
+        self._skip_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in self._SKIP_TAGS:
+            self._skip_depth += 1
+        elif tag in ("p", "br", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6"):
+            self._chunks.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in self._SKIP_TAGS and self._skip_depth:
+            self._skip_depth -= 1
+        elif tag in ("p", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6"):
+            self._chunks.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if not self._skip_depth:
+            self._chunks.append(data)
+
+    def text(self) -> str:
+        raw = "".join(self._chunks)
+        raw = _html.unescape(raw)
+        lines = [re.sub(r"\s+", " ", ln).strip() for ln in raw.splitlines()]
+        return "\n".join(ln for ln in lines if ln)
+
+
+def _html_to_text(body: str) -> str:
+    """Strip tags from an HTML document, returning readable plain text."""
+    extractor = _TextExtractor()
+    extractor.feed(body)
+    return extractor.text()
+
+
+class FetchTool:
+    """Fetch a URL and return its content as text."""
+
+    name = "fetch"
+    description = (
+        "Fetch a URL over HTTP(S) and return its content as text. "
+        "HTML pages are converted to readable plain text."
+    )
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "url": {"type": "string"},
+            "max_chars": {"type": "integer"},
+        },
+        "required": ["url"],
+    }
+
+    _DEFAULT_MAX_CHARS = 8000
+    _MAX_CHARS_LIMIT = 50_000
+
+    def __init__(self, client: httpx.AsyncClient | None = None) -> None:
+        self._client = client
+
+    async def run(self, arguments: dict) -> ToolOutcome:
+        url = (arguments.get("url") or "").strip()
+        if not url:
+            return ToolOutcome(content="error: url is required", is_error=True)
+        try:
+            scheme = urlparse(url).scheme.lower()
+        except ValueError as exc:
+            return ToolOutcome(content=f"error: invalid url: {exc}", is_error=True)
+        if scheme not in ("http", "https"):
+            return ToolOutcome(
+                content="error: only http(s) urls are supported", is_error=True
+            )
+        try:
+            max_chars = int(arguments.get("max_chars", self._DEFAULT_MAX_CHARS))
+        except (TypeError, ValueError):
+            return ToolOutcome(content="error: max_chars must be an integer",
+                               is_error=True)
+        max_chars = max(1, min(max_chars, self._MAX_CHARS_LIMIT))
+
+        client = self._client or httpx.AsyncClient(
+            timeout=httpx.Timeout(30.0, connect=10.0), follow_redirects=True
+        )
+        try:
+            response = await client.get(
+                url, headers={"User-Agent": "pico-agent/0.1"}
+            )
+        except httpx.HTTPError as exc:
+            return ToolOutcome(content=f"error: request failed: {exc}", is_error=True)
+        finally:
+            if self._client is None:
+                await client.aclose()
+
+        if response.status_code >= 400:
+            return ToolOutcome(
+                content=f"error: HTTP {response.status_code} for {url}",
+                is_error=True,
+            )
+        content_type = response.headers.get("content-type", "")
+        body = response.text
+        if "html" in content_type or body.lstrip().startswith("<"):
+            body = _html_to_text(body)
+        if not body.strip():
+            return ToolOutcome(content="(empty response)")
+        if len(body) > max_chars:
+            body = body[:max_chars] + f"\n... truncated at {max_chars} chars"
+        return ToolOutcome(content=body)
+
+
+class _DDGResultParser(HTMLParser):
+    """Parse DuckDuckGo ``/html/`` results into (title, url, snippet) triples."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.results: list[dict[str, str]] = []
+        self._current: dict[str, str] | None = None
+        self._in_title = False
+        self._in_snippet = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        classes = dict(attrs).get("class", "") or ""
+        if tag == "a" and "result__a" in classes:
+            self._current = {"title": "", "url": dict(attrs).get("href", "") or "",
+                             "snippet": ""}
+            self._in_title = True
+        elif tag == "a" and "result__snippet" in classes:
+            self._in_snippet = True
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag != "a":
+            return
+        if self._in_title:
+            self._in_title = False
+        elif self._in_snippet:
+            self._in_snippet = False
+            if self._current and self._current["url"]:
+                self._current["title"] = self._current["title"].strip()
+                self._current["snippet"] = self._current["snippet"].strip()
+                self.results.append(self._current)
+                self._current = None
+
+    def handle_data(self, data: str) -> None:
+        if self._in_title and self._current is not None:
+            self._current["title"] += data
+        elif self._in_snippet and self._current is not None:
+            self._current["snippet"] += data
+
+
+class WebSearchTool:
+    """Search the web (no API key required) and return ranked results."""
+
+    name = "websearch"
+    description = (
+        "Search the web for a query and return ranked results "
+        "(title, url, snippet)."
+    )
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"},
+            "count": {"type": "integer"},
+        },
+        "required": ["query"],
+    }
+
+    _DEFAULT_COUNT = 5
+    _MAX_COUNT = 10
+    _SEARCH_URL = "https://html.duckduckgo.com/html/"
+
+    def __init__(self, client: httpx.AsyncClient | None = None) -> None:
+        self._client = client
+
+    async def run(self, arguments: dict) -> ToolOutcome:
+        query = (arguments.get("query") or "").strip()
+        if not query:
+            return ToolOutcome(content="error: query is required", is_error=True)
+        try:
+            count = int(arguments.get("count", self._DEFAULT_COUNT))
+        except (TypeError, ValueError):
+            return ToolOutcome(content="error: count must be an integer",
+                               is_error=True)
+        count = max(1, min(count, self._MAX_COUNT))
+
+        client = self._client or httpx.AsyncClient(
+            timeout=httpx.Timeout(30.0, connect=10.0)
+        )
+        try:
+            response = await client.post(
+                self._SEARCH_URL,
+                data={"q": query},
+                headers={"User-Agent": "pico-agent/0.1"},
+            )
+        except httpx.HTTPError as exc:
+            return ToolOutcome(content=f"error: search failed: {exc}", is_error=True)
+        finally:
+            if self._client is None:
+                await client.aclose()
+
+        if response.status_code >= 400:
+            return ToolOutcome(
+                content=f"error: search returned HTTP {response.status_code}",
+                is_error=True,
+            )
+        parser = _DDGResultParser()
+        parser.feed(response.text)
+        results = parser.results[:count]
+        if not results:
+            return ToolOutcome(content="(no results)")
+        lines: list[str] = []
+        for i, item in enumerate(results, start=1):
+            lines.append(f"{i}. {item['title']}\n   {item['url']}\n   {item['snippet']}")
+        return ToolOutcome(content="\n".join(lines))
 
 
 class ToolRegistry:

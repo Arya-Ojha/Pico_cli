@@ -455,12 +455,14 @@ name = "pico-core"
 version = "0.1.0"
 source = { editable = "packages/pico_core" }
 dependencies = [
+    { name = "httpx" },
     { name = "pico-ai" },
     { name = "pydantic" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", specifier = ">=0.27" },
     { name = "pico-ai", editable = "packages/pico_ai" },
     { name = "pydantic", specifier = ">=2" },
 ]
