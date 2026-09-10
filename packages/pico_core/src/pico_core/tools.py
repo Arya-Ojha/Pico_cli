@@ -1,4 +1,4 @@
-"""The four core tools: read, write, edit, bash.
+"""The core tools: read, write, edit, bash, grep.
 
 Each tool operates against a working directory. Bash runs unsandboxed and is
 disabled unless an opt-in flag is set. Tool errors (missing file, non-zero exit)
@@ -8,6 +8,8 @@ surface as results rather than exceptions.
 from __future__ import annotations
 
 import asyncio
+import fnmatch
+import re
 from pathlib import Path
 from typing import Protocol
 
@@ -172,6 +174,108 @@ class BashTool:
             return ToolOutcome(content=content, is_error=proc.returncode != 0)
         except Exception as exc:  # noqa: BLE001 - surface any failure as a result
             return ToolOutcome(content=f"error: {exc}", is_error=True)
+
+
+class GrepTool:
+    """Search file contents for a regex pattern."""
+
+    name = "grep"
+    description = (
+        "Search file contents for a regex pattern. Searches a single file or "
+        "recursively under a directory; returns matching lines as "
+        "`path:line: content`."
+    )
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "pattern": {"type": "string"},
+            "path": {"type": "string"},
+            "include": {"type": "string"},
+        },
+        "required": ["pattern"],
+    }
+
+    # Directories never descended into during a recursive search.
+    _SKIP_DIRS = frozenset(
+        {
+            ".git",
+            ".venv",
+            "venv",
+            "__pycache__",
+            "node_modules",
+            ".mypy_cache",
+            ".pytest_cache",
+            ".ruff_cache",
+            "dist",
+            "build",
+        }
+    )
+    _MAX_MATCHES = 100
+    _MAX_LINE_LEN = 200
+
+    def __init__(self, cwd: Path) -> None:
+        self._cwd = cwd
+
+    async def run(self, arguments: dict) -> ToolOutcome:
+        raw_pattern = arguments.get("pattern", "")
+        if not raw_pattern:
+            return ToolOutcome(content="error: pattern is required", is_error=True)
+        try:
+            regex = re.compile(raw_pattern)
+        except re.error as exc:
+            return ToolOutcome(content=f"error: invalid regex: {exc}", is_error=True)
+
+        target = _resolve(self._cwd, arguments.get("path", ".") or ".")
+        include = arguments.get("include", "")
+
+        if not target.exists():
+            return ToolOutcome(
+                content=f"error: path not found: {arguments.get('path', '.')}",
+                is_error=True,
+            )
+
+        files: list[Path] = []
+        if target.is_file():
+            files = [target]
+        else:
+            for p in sorted(target.rglob("*")):
+                if not p.is_file():
+                    continue
+                if any(part in self._SKIP_DIRS for part in p.parts):
+                    continue
+                if p.suffix == ".egg-info" or ".egg-info" in p.parts:
+                    continue
+                if include and not fnmatch.fnmatch(p.name, include):
+                    continue
+                files.append(p)
+
+        if target.is_file() and include and not fnmatch.fnmatch(target.name, include):
+            return ToolOutcome(content="(no matches)")
+
+        matches: list[str] = []
+        for file in files:
+            try:
+                text = file.read_text(encoding="utf-8", errors="strict")
+            except (OSError, UnicodeDecodeError, ValueError):
+                continue
+            try:
+                rel = file.relative_to(self._cwd).as_posix()
+            except ValueError:
+                rel = str(file)
+            for lineno, line in enumerate(text.splitlines(), start=1):
+                if regex.search(line):
+                    line = line.strip()
+                    if len(line) > self._MAX_LINE_LEN:
+                        line = line[: self._MAX_LINE_LEN] + "…"
+                    matches.append(f"{rel}:{lineno}: {line}")
+                    if len(matches) >= self._MAX_MATCHES:
+                        matches.append(
+                            f"... truncated at {self._MAX_MATCHES} matches"
+                        )
+                        return ToolOutcome(content="\n".join(matches))
+        if not matches:
+            return ToolOutcome(content="(no matches)")
+        return ToolOutcome(content="\n".join(matches))
 
 
 class ToolRegistry:
