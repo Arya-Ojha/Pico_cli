@@ -10,7 +10,7 @@ from pathlib import Path
 
 from pico_core.fsm import LoopEvent
 
-from .config import load_settings
+from .config import Settings, load_settings
 from .providers import FREE_MODEL_ALIAS, create_provider, resolve_free_model
 from .session import AgentSession
 
@@ -25,7 +25,28 @@ def format_event(event: LoopEvent) -> str | None:
     if event.kind == "tool_result" and event.tool_result is not None:
         if event.tool_result.name == "bash":
             return event.tool_result.content.rstrip() + "\n"
+        if event.tool_result.is_error:
+            # Surface failures (denied/unknown/error) for non-bash tools;
+            # successful read/write/edit/grep/fetch/websearch/todo results
+            # stay quiet — the model's summary covers them.
+            return f"error [{event.tool_result.name}]: {event.tool_result.content.rstrip()}\n"
     return None
+
+
+def apply_cli_overrides(args: argparse.Namespace, settings: Settings) -> bool:
+    """Apply CLI flags onto ``settings`` (permission gating + skills).
+
+    ``--allow-tools`` (comma-separated) wins over ``--no-bash`` per ADR-0003
+    precedence; ``--skills-dir`` overrides the configured skills directory;
+    ``--no-skills`` disables skill loading entirely (returns the flag).
+    """
+    if getattr(args, "allow_tools", None):
+        settings.allowed_tools = [
+            name.strip() for name in args.allow_tools.split(",") if name.strip()
+        ]
+    if getattr(args, "skills_dir", None):
+        settings.skills_dir = args.skills_dir
+    return not getattr(args, "no_skills", False)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -43,12 +64,25 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--model", default=None, help="Override the configured model.")
     run.add_argument("--cwd", default=None, help="Working directory (default: current).")
     run.add_argument("--session", default=None, help="Resume an existing session by id.")
+    run.add_argument(
+        "--allow-tools",
+        default=None,
+        help="Comma-separated tool allowlist (e.g. 'read,grep,bash'); "
+        "overrides settings.allowed_tools and --no-bash precedence.",
+    )
+    run.add_argument(
+        "--skills-dir", default=None, help="Override the configured skills directory."
+    )
+    run.add_argument(
+        "--no-skills", action="store_true", help="Disable SKILL.md loading."
+    )
     return parser
 
 
 async def run_command(args: argparse.Namespace) -> int:
     settings = load_settings()
     model = args.model or settings.model
+    load_skills = apply_cli_overrides(args, settings)
     api_key = os.environ.get(settings.api_key_env, "")
 
     if not api_key:
@@ -73,6 +107,7 @@ async def run_command(args: argparse.Namespace) -> int:
             settings=settings,
             working_dir=args.cwd,
             allow_bash=not args.no_bash,
+            load_skills=load_skills,
         )
     else:
         session = AgentSession(
@@ -81,6 +116,7 @@ async def run_command(args: argparse.Namespace) -> int:
             settings=settings,
             working_dir=args.cwd,
             allow_bash=not args.no_bash,
+            load_skills=load_skills,
         )
     prompt = " ".join(args.prompt)
     if prompt.startswith("/compact"):

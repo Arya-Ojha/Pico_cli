@@ -4,6 +4,12 @@ labels:
   - ready-for-agent
 ---
 
+> **Status note (2026-09-30):** implemented and since exceeded — the TUI is now
+> a full Textual + Rich app (`/help`, `/history`, `/compact`, `/model`,
+> `/skills`, `/fork`, `/undo`, `/quit`, todo panel, status bar, pickers).
+> The "empty scaffold / deferred rendering" framing below is historical.
+> Kept for history — do not re-implement.
+
 # Terminal UI (pico_tui)
 
 ## Problem Statement

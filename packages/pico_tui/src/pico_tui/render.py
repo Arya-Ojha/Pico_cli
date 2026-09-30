@@ -71,9 +71,12 @@ def render_event(event: LoopEvent):  # -> RenderableType (kept loose for mypy si
                 border_style="cyan",
                 title_align="left",
             )
-        if result.name == "read":
+        if result.name == "read" and not result.is_error:
             return None  # read results stay hidden; only the call is shown
         color = _TOOL_COLORS.get(result.name, "dim cyan")
+        if result.is_error:
+            # Denied/unknown/failed calls render red so gating is visible.
+            color = "red"
         if result.name == "bash":
             return Panel(
                 result.content.rstrip(),

@@ -63,6 +63,26 @@ def test_read_tool_result_renders_nothing():
     assert render_event(_result("read", "hello world from file")) is None
 
 
+def _error_result(name: str, content: str) -> LoopEvent:
+    return LoopEvent(
+        kind="tool_result",
+        tool_result=ToolResultPayload(
+            tool_call_id="c1", name=name, content=content, is_error=True
+        ),
+    )
+
+
+def test_error_result_renders_red_panel():
+    rendered = render_event(_error_result("read", "error: tool not allowed: read"))
+    assert isinstance(rendered, Panel)
+    assert rendered.border_style == "red"
+
+
+def test_read_error_result_is_visible():
+    # Unlike successful reads (hidden), failures must surface — gating UX.
+    assert render_event(_error_result("read", "error: file not found: x")) is not None
+
+
 # ── bash parsing ──────────────────────────────────────────────────
 
 

@@ -96,6 +96,42 @@ def test_thinking_renderable_collapsed_and_expanded():
     assert expanded.startswith("[@click=app.toggle_thinking(1)]")
 
 
+# ── /skills ─────────────────────────────────────────────────────────
+
+
+def test_skills_text_empty_session(tmp_path):
+    from conftest import FakeProvider, make_session
+
+    mgr = _SessionManager(make_session(FakeProvider([]), tmp_path))
+    rendered = mgr.skills_text()
+    assert isinstance(rendered, Text)
+    assert "no skills" in rendered.plain
+
+
+def test_skills_text_lists_loaded_skills(tmp_path):
+    from rich.table import Table
+
+    from pico_sdk.config import Settings
+
+    from conftest import FakeProvider, make_session
+
+    skills_root = tmp_path / "skills"
+    (skills_root / "helper").mkdir(parents=True)
+    (skills_root / "helper" / "SKILL.md").write_text(
+        "---\nname: helper\ndescription: Helps with things.\n---\nDo stuff.\n",
+        encoding="utf-8",
+    )
+    settings = Settings(
+        session_dir=str(tmp_path), skills_dir=str(skills_root)
+    )
+    session = make_session(
+        FakeProvider([]), tmp_path, settings=settings, load_skills=True
+    )
+    rendered = _SessionManager(session).skills_text()
+    assert isinstance(rendered, Table)
+    assert rendered.row_count == 1
+
+
 # ── parse_line ──────────────────────────────────────────────────────
 
 
@@ -108,6 +144,7 @@ def test_parse_line_commands():
     assert parse_line("/exit") == Command("quit")
     assert parse_line("/help") == Command("help")
     assert parse_line("/history") == Command("history")
+    assert parse_line("/skills") == Command("skills")
     assert parse_line("/undo") == Command("undo")
     assert parse_line("/compact focus on the bug") == Command("compact", "focus on the bug")
     assert parse_line("/fork abc123") == Command("fork", "abc123")

@@ -70,11 +70,13 @@ class ModelPickerScreen(ModalScreen[str | None]):
         self, event: OptionList.OptionSelected
     ) -> None:
         """Dismiss with the selected model id."""
-        # Textual renamed the index attribute across versions.
+        # Textual renamed the index attribute across versions; getattr keeps
+        # both spellings working (and keeps mypy happy — the attribute only
+        # exists on the event instance, not the stubbed class surface).
         index = getattr(event, "option_index", None)
         if index is None:
-            index = event.index
-        self.dismiss(self._models[index]["id"])
+            index = getattr(event, "index")
+        self.dismiss(self._models[int(index)]["id"])
 
     def action_cancel(self) -> None:
         """Dismiss without changing the model."""

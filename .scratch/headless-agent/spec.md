@@ -84,6 +84,7 @@ The TUI (`pico_tui`) is a later milestone.
 - **Compaction.** Auto-triggered when `contextTokens > contextWindow − reserveTokens` (reserve default 16384), plus a manual `/compact [instructions]` override. Compaction summarises older turns into a compaction-summary node, keeping the system prompt and a recent window.
 - **Config & sessions.** Settings in `~/.pico/settings.json`; sessions persisted as `.jsonl` under `~/.pico/sessions/<id>.jsonl`.
 - **Extension binding.** `register_tool`, `register_provider`, and lifecycle hooks (`on_session_start`, `tool.before.*`, `tool.after.*`). Plugins load from a plugins directory and via explicit registration.
+  > **Superseded by ADR-0003 (2026-09-30):** the generic binding was removed in favour of a hardcoded core with curated extensions (fixed observe-only hooks + `SKILL.md` skills). See `docs/adr/0003-hardcoded-core.md`.
 - **Models in pydantic v2.**
 - **Deferred as plugins.** MCP, sub-agents, plan mode, and local to-do tracking are explicitly out of the core and will be added later as plugins.
 

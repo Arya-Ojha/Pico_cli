@@ -14,7 +14,7 @@ from pico_core.tools import BashTool, EditTool, FetchTool, GrepTool, ReadTool, T
 
 from .config import Settings, load_settings
 from .extensions import ExtensionManager
-from .skills import discover_skills, merge_skills, render_skills_prompt
+from .skills import Skill, discover_skills, merge_skills, render_skills_prompt
 
 DEFAULT_SYSTEM_PROMPT = (
     "You are pico, a coding agent. You can read, write, and edit files, search "
@@ -74,16 +74,17 @@ class AgentSession:
                 )
 
         self.system_prompt = system_prompt
+        self.skills: list[Skill] = []
         if load_skills:
             # Global skills plus project-local override
             # (<cwd>/.pico/skills wins on name conflicts), merged and capped.
-            skills = merge_skills(
+            self.skills = merge_skills(
                 [
                     discover_skills([self.settings.skills_dir]),
                     discover_skills([self.working_dir / ".pico" / "skills"]),
                 ]
             )
-            skills_section = render_skills_prompt(skills)
+            skills_section = render_skills_prompt(self.skills)
             if skills_section:
                 self.system_prompt = f"{system_prompt}\n\n{skills_section}"
 
@@ -186,6 +187,7 @@ class AgentSession:
         working_dir: str | Path | None = None,
         allow_bash: bool = True,
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
+        load_skills: bool = True,
     ) -> "AgentSession":
         """Resume an existing session persisted under ``session_dir``."""
         settings = settings or load_settings()
@@ -199,4 +201,5 @@ class AgentSession:
             allow_bash=allow_bash,
             session=session,
             system_prompt=system_prompt,
+            load_skills=load_skills,
         )

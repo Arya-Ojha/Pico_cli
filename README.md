@@ -98,7 +98,10 @@ Flags for `picoCLI run`:
 
 | Flag | Purpose |
 |---|---|
-| `--no-bash` | Disable unsandboxed bash execution (on by default) |
+| `--no-bash` | Disable unsandboxed bash execution (on by default; ignored when `allowed_tools` is set without `bash`) |
+| `--allow-tools <csv>` | Tool allowlist, e.g. `--allow-tools read,grep,bash` (overrides `settings.allowed_tools`) |
+| `--skills-dir <path>` | Override the configured skills directory |
+| `--no-skills` | Disable `SKILL.md` loading |
 | `--model <name>` | Override the configured model |
 | `--cwd <path>` | Set the working directory |
 | `--session <id>` | Resume an existing session |
@@ -116,11 +119,33 @@ uv run picoCLI-chat
 | `/help` | `F1` | Show help |
 | `/history` | `Ctrl+H` | Browse session nodes — pick one to jump to |
 | `/compact [text]` | `Ctrl+K` | Compact context (optionally with steering text) |
+| `/skills` | — | List loaded `SKILL.md` skills |
 | `/fork <n or id>` | — | Rewind to a node and start a new branch |
 | `/undo` | `Ctrl+Z` | Rewind to the previous user turn |
 | `/quit` | `Ctrl+Q` | Save the session and exit |
 
-Tool activity is rendered inline — bash commands echoed before running (green), and tool calls/results shown as color-coded panels (`read` blue, `write` yellow, `edit` magenta, `bash` green, `todo` cyan). `todo` calls stay hidden (only the `todo` result shows); bash results collapse to a one-line success/error you can click to expand. The agent's todos also appear in a read-only panel on the right side of the chat while any exist.
+Tool activity is rendered inline — bash commands echoed before running (green), and tool calls/results shown as color-coded panels (`read` blue, `write` yellow, `edit` magenta, `bash` green, `todo` cyan). `todo` calls stay hidden (only the `todo` result shows); bash results collapse to a one-line success/error you can click to expand. Failed tool calls (denied, unknown, or errored) render with a red border so permission gating is visible. The agent's todos also appear in a read-only panel on the right side of the chat while any exist.
+
+## Skills & permissions
+
+Skills are model-invoked `SKILL.md` files — knowledge only, no code execution. Each skill is a directory with a `SKILL.md` (optional `name`/`description` frontmatter + markdown instructions):
+
+```
+~/.pico/skills/commit-helper/SKILL.md      # global
+<project>/.pico/skills/commit-helper/SKILL.md  # project-local, wins on name conflicts
+```
+
+```markdown
+---
+name: commit-helper
+description: Use when the user wants to commit code.
+---
+Run `git status` first, then ...
+```
+
+Up to 20 skills (alphabetical) are inlined into the system prompt. List them with `/skills` in the TUI, or disable with `--no-skills` / `--skills-dir <path>`.
+
+Permission gating via `allowed_tools` in `settings.json` (`null` = all tools, `[]` = none) or `--allow-tools read,grep,bash`. Denied tools return an `error: tool not allowed` result the model can react to. When `allowed_tools` is set it wins over `--no-bash`; otherwise `--no-bash` disables bash.
 
 ## Where sessions live
 

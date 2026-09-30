@@ -28,6 +28,7 @@ from pico_sdk import (
     ToolResultPayload,
     UserPayload,
 )
+from pico_sdk.cli import apply_cli_overrides
 from pico_sdk.config import load_settings, save_settings
 from pico_sdk.providers import FREE_MODEL_ALIAS, create_provider, resolve_free_model
 
@@ -45,6 +46,7 @@ HELP_TEXT = """\
   [cyan]/compact, Ctrl+K[/] summarise older turns (optionally with steering text)
   [cyan]/model <name>[/]   change the LLM model for this session
                           (/model alone opens an interactive model picker)
+  [cyan]/skills[/]         list loaded SKILL.md skills
   [cyan]/fork <n|id>[/]     rewind to a node and start a new branch
   [cyan]/undo, Ctrl+Z[/]    rewind to the previous user turn
   [cyan]/quit, Ctrl+Q[/]    save and exit
@@ -260,6 +262,18 @@ class _SessionManager:
         except KeyError:
             return f"error: unknown node id: {arg}"
 
+    def skills_text(self) -> Table | Text:
+        """Return a Rich renderable listing loaded skills."""
+        skills = self.session.skills
+        if not skills:
+            return Text("(no skills loaded)", style="dim")
+        table = Table(box=None, show_header=False, padding=(0, 1))
+        table.add_column("name", width=20)
+        table.add_column("description")
+        for skill in skills:
+            table.add_row(skill.name, skill.description or "(no description)")
+        return table
+
 
 
 class PicoApp(App[None]):
@@ -418,6 +432,8 @@ class PicoApp(App[None]):
         elif cmd.kind == "fork":
             msg = self._mgr.fork(cmd.arg)
             self._write_chat(Text(msg, style="dim"))
+        elif cmd.kind == "skills":
+            self._write_chat(self._mgr.skills_text())
 
     # -- history picker --
 
@@ -701,10 +717,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--session", default=None, help="Resume an existing session by id."
     )
+    parser.add_argument(
+        "--allow-tools",
+        default=None,
+        help="Comma-separated tool allowlist (e.g. 'read,grep,bash').",
+    )
+    parser.add_argument(
+        "--skills-dir", default=None, help="Override the configured skills directory."
+    )
+    parser.add_argument(
+        "--no-skills", action="store_true", help="Disable SKILL.md loading."
+    )
     args = parser.parse_args(argv)
 
     settings = load_settings()
     model = args.model or settings.model
+    load_skills = apply_cli_overrides(args, settings)
     provider = create_provider(settings)
     if model == FREE_MODEL_ALIAS:
         # Resolve the alias to a concrete free model available right now;
@@ -722,6 +750,7 @@ def main(argv: list[str] | None = None) -> int:
             settings=settings,
             working_dir=args.cwd,
             allow_bash=not args.no_bash,
+            load_skills=load_skills,
         )
     else:
         session = AgentSession(
@@ -730,6 +759,7 @@ def main(argv: list[str] | None = None) -> int:
             settings=settings,
             working_dir=args.cwd,
             allow_bash=not args.no_bash,
+            load_skills=load_skills,
         )
     mgr = _SessionManager(session)
     app = PicoApp(mgr)
