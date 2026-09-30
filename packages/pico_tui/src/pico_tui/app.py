@@ -46,6 +46,7 @@ from .history_picker import HistoryPickerScreen
 from .model_picker import ModelPickerScreen
 from .provider_form import ProviderFormScreen
 from .provider_picker import ProviderPickerScreen
+from .skill_picker import SkillPickerScreen
 from .render import _truncate, render_event
 from .status_bar import ContextStatusBar
 from .todo_panel import TodoPanel
@@ -60,7 +61,7 @@ HELP_TEXT = """\
   [cyan]/provider [id][/] select the LLM provider — opens a picker, then a
                           setup form for its API key, URL, and other options
                           (/provider <id> jumps straight to that form)
-  [cyan]/skills[/]         list loaded SKILL.md skills
+  [cyan]/skills[/]         pick a skill — inserts it into the input bar
   [cyan]/fork <n|id>[/]     rewind to a node and start a new branch
   [cyan]/undo, Ctrl+Z[/]    rewind to the previous user turn
   [cyan]/quit, Ctrl+Q[/]    save and exit
@@ -294,6 +295,13 @@ class _SessionManager:
             table.add_row(skill.name, skill.description or "(no description)")
         return table
 
+    def skill_entries(self) -> list[dict]:
+        """Return one dict per loaded skill for the picker."""
+        return [
+            {"name": skill.name, "description": skill.description or ""}
+            for skill in self.session.skills
+        ]
+
 
 
 class PicoApp(App[None]):
@@ -458,7 +466,7 @@ class PicoApp(App[None]):
             msg = self._mgr.fork(cmd.arg)
             self._write_chat(Text(msg, style="dim"))
         elif cmd.kind == "skills":
-            self._write_chat(self._mgr.skills_text())
+            await self._show_skill_picker()
         elif cmd.kind == "provider":
             if cmd.arg:
                 if cmd.arg in provider_ids():
@@ -491,6 +499,24 @@ class PicoApp(App[None]):
             self._update_status_bar()
 
         self.push_screen(HistoryPickerScreen(entries), callback=_on_selected)
+
+    # -- skill picker --
+
+    async def _show_skill_picker(self) -> None:
+        """Show the skill picker; the pick is inserted into the input bar."""
+        entries = self._mgr.skill_entries()
+        if not entries:
+            self._write_chat(Text("(no skills loaded)", style="dim"))
+            return
+
+        def _on_selected(name: str | None) -> None:
+            if name is None:
+                return
+            input_widget = self.query_one("#input-bar", Input)
+            input_widget.value = f"Use the '{name}' skill: "
+            input_widget.focus()
+
+        self.push_screen(SkillPickerScreen(entries), callback=_on_selected)
 
     # -- model picker --
 

@@ -21,7 +21,7 @@ pico_ai ─► pico_core ─► pico_sdk ─► pico_tui
 - **Reasoning & usage** — thinking blocks are preserved in the transcript; token counts are tracked.
 - **Session tree** — sessions are persisted as append-only trees of nodes; you can resume, rewind, and fork branches.
 - **Auto-compaction** — context is summarised automatically at a token threshold, plus a manual override.
-- **Curated extensions** — observe-only hooks (`session_start`, `pre_tool_use`, `post_tool_use`, `post_tool_failure`) and model-invoked `SKILL.md` skills from `~/.pico/skills/`; permission gating via `allowed_tools` (see ADR-0003).
+- **Curated extensions** — observe-only hooks (`session_start`, `pre_tool_use`, `post_tool_use`, `post_tool_failure`) and model-invoked `SKILL.md` skills from `~/.pico/skills/` + `~/.agents/skills/`; permission gating via `allowed_tools` (see ADR-0003).
 - **Yolo mode** — no approval prompts: it self-corrects by looping between streaming and tool execution.
 
 ## Packages
@@ -134,7 +134,7 @@ uv run picoCLI-chat
 | `/help` | `F1` | Show help |
 | `/history` | `Ctrl+H` | Browse session nodes — pick one to jump to |
 | `/compact [text]` | `Ctrl+K` | Compact context (optionally with steering text) |
-| `/skills` | — | List loaded `SKILL.md` skills |
+| `/skills` | — | Pick a loaded `SKILL.md` skill — inserts it into the input bar |
 | `/provider [id]` | — | Pick the LLM provider, then fill its setup form (key, URL, model) |
 | `/fork <n or id>` | — | Rewind to a node and start a new branch |
 | `/undo` | `Ctrl+Z` | Rewind to the previous user turn |
@@ -148,6 +148,7 @@ Skills are model-invoked `SKILL.md` files — knowledge only, no code execution.
 
 ```
 ~/.pico/skills/commit-helper/SKILL.md      # global
+~/.agents/skills/commit-helper/SKILL.md    # shared (e.g. opencode/Matt Pocock), also loaded
 <project>/.pico/skills/commit-helper/SKILL.md  # project-local, wins on name conflicts
 ```
 
@@ -159,7 +160,7 @@ description: Use when the user wants to commit code.
 Run `git status` first, then ...
 ```
 
-Up to 20 skills (alphabetical) are inlined into the system prompt. List them with `/skills` in the TUI, or disable with `--no-skills` / `--skills-dir <path>`.
+All discovered skills (alphabetical, no cap) are inlined into the system prompt. List them with `/skills` in the TUI, or disable with `--no-skills` / `--skills-dir <path>`.
 
 Permission gating via `allowed_tools` in `settings.json` (`null` = all tools, `[]` = none) or `--allow-tools read,grep,bash`. Denied tools return an `error: tool not allowed` result the model can react to. When `allowed_tools` is set it wins over `--no-bash`; otherwise `--no-bash` disables bash.
 

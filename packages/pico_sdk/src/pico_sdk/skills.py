@@ -10,10 +10,11 @@ frontmatter (``name`` / ``description``) followed by markdown instructions::
     # Commit helper
     Run ``git status`` first ...
 
-Skills are discovered from ``~/.pico/skills/*/SKILL.md`` plus an optional
-project-local directory, and their descriptions are inlined into the system
-prompt so the model knows when to apply them. Skills carry knowledge only —
-they execute no code.
+Skills are discovered from ``~/.pico/skills/*/SKILL.md`` plus
+``~/.agents/skills/*/SKILL.md`` (e.g. shared/opencode skills) plus an
+optional project-local directory, and their descriptions are inlined
+into the system prompt so the model knows when to apply them. Skills
+carry knowledge only — they execute no code.
 """
 
 from __future__ import annotations
@@ -69,21 +70,23 @@ def discover_skills(directories: list[Path | str]) -> list[Skill]:
     return skills
 
 
-#: Maximum skills inlined into the system prompt (alphabetical, capped so a
-#: bloated skills dir cannot blow the context window).
-MAX_SKILLS = 20
+#: Second global skills location (shared/opencode-style skills, e.g. Matt
+#: Pocock's). Always searched alongside the configured ``skills_dir``;
+#: ``skills_dir`` wins on name conflicts, project-local wins over both.
+AGENTS_SKILLS_DIR = "~/.agents/skills"
 
 
 def merge_skills(layers: list[list[Skill]]) -> list[Skill]:
     """Merge skill layers; later layers override earlier ones by name.
 
-    Returns skills sorted by name and capped at ``MAX_SKILLS``.
+    Returns all skills sorted by name (no cap — every discovered skill is
+    inlined into the system prompt).
     """
     merged: dict[str, Skill] = {}
     for layer in layers:
         for skill in layer:
             merged[skill.name] = skill
-    return sorted(merged.values(), key=lambda s: s.name)[:MAX_SKILLS]
+    return sorted(merged.values(), key=lambda s: s.name)
 
 
 def render_skills_prompt(skills: list[Skill]) -> str:

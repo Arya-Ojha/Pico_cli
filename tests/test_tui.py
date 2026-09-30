@@ -129,7 +129,11 @@ def test_skills_text_lists_loaded_skills(tmp_path):
     )
     rendered = _SessionManager(session).skills_text()
     assert isinstance(rendered, Table)
-    assert rendered.row_count == 1
+    # the tmp skill is present; the real ~/.agents/skills may add more rows
+    # on machines that have it, so only assert a lower bound
+    assert rendered.row_count >= 1
+    names = [s.name for s in session.skills]
+    assert "helper" in names
 
 
 # ── parse_line ──────────────────────────────────────────────────────

@@ -23,4 +23,4 @@ The domain vocabulary for **pico**, a Python CLI coding agent with a hardcoded c
 - **AI call** — the unified request/response shape used to talk to any provider.
 - **Headless** — running the agent programmatically (as a library) with no terminal UI.
 - **Hook** — a curated, observe-only lifecycle callback (`session_start`, `pre_tool_use`, `post_tool_use`, `post_tool_failure`). Hooks cannot mutate arguments/results or veto execution.
-- **Skill** — a model-invoked `SKILL.md` markdown file (name + trigger description + instructions) discovered from `~/.pico/skills/*/SKILL.md` and inlined into the system prompt.
+- **Skill** — a model-invoked `SKILL.md` markdown file (name + trigger description + instructions) discovered from `~/.pico/skills/*/SKILL.md` and `~/.agents/skills/*/SKILL.md` (plus project-local override) and inlined into the system prompt.

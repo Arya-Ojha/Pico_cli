@@ -14,7 +14,7 @@ from pico_core.tools import BashTool, EditTool, FetchTool, GrepTool, ReadTool, T
 
 from .config import Settings, load_settings
 from .extensions import ExtensionManager
-from .skills import Skill, discover_skills, merge_skills, render_skills_prompt
+from .skills import AGENTS_SKILLS_DIR, Skill, discover_skills, merge_skills, render_skills_prompt
 
 DEFAULT_SYSTEM_PROMPT = (
     "You are pico, a coding agent. You can read, write, and edit files, search "
@@ -81,10 +81,12 @@ class AgentSession:
         self.system_prompt = system_prompt
         self.skills: list[Skill] = []
         if load_skills:
-            # Global skills plus project-local override
-            # (<cwd>/.pico/skills wins on name conflicts), merged and capped.
+            # Global skills (shared ~/.agents/skills first, then the
+            # configured skills_dir) plus project-local override
+            # (<cwd>/.pico/skills wins on name conflicts); all loaded.
             self.skills = merge_skills(
                 [
+                    discover_skills([AGENTS_SKILLS_DIR]),
                     discover_skills([self.settings.skills_dir]),
                     discover_skills([self.working_dir / ".pico" / "skills"]),
                 ]

@@ -159,11 +159,9 @@ def test_project_skill_overrides_global(tmp_path):
     assert "Global version." not in session.system_prompt
 
 
-def test_skills_capped_at_max(tmp_path):
-    from pico_sdk.skills import MAX_SKILLS
-
+def test_skills_all_loaded_no_cap(tmp_path):
     skills_root = tmp_path / "many-skills"
-    for i in range(MAX_SKILLS + 5):
+    for i in range(25):
         d = skills_root / f"skill-{i:02d}"
         d.mkdir(parents=True)
         (d / "SKILL.md").write_text(
@@ -176,9 +174,35 @@ def test_skills_capped_at_max(tmp_path):
     session = make_session(
         FakeProvider([]), tmp_path, settings=settings, load_skills=True
     )
-    # capped and alphabetical: skill-24 must be cut
-    assert "skill-24" not in session.system_prompt
+    # no cap: every skill is inlined, alphabetical
+    assert "skill-24" in session.system_prompt
     assert "skill-00" in session.system_prompt
+    tmp_skills = [
+        s for s in session.skills if str(s.path).startswith(str(skills_root))
+    ]
+    assert len(tmp_skills) == 25
+
+
+def test_agents_layer_loses_to_skills_dir(tmp_path):
+    from pico_sdk.skills import discover_skills, merge_skills
+
+    agents_root = tmp_path / "agents-skills"
+    (agents_root / "helper").mkdir(parents=True)
+    (agents_root / "helper" / "SKILL.md").write_text(
+        "---\nname: helper\ndescription: Agents version.\n---\nAgents content.\n",
+        encoding="utf-8",
+    )
+    pico_root = tmp_path / "pico-skills"
+    (pico_root / "helper").mkdir(parents=True)
+    (pico_root / "helper" / "SKILL.md").write_text(
+        "---\nname: helper\ndescription: Pico version.\n---\nPico content.\n",
+        encoding="utf-8",
+    )
+    merged = merge_skills(
+        [discover_skills([agents_root]), discover_skills([pico_root])]
+    )
+    assert len(merged) == 1
+    assert merged[0].description == "Pico version."
 
 
 async def test_unknown_tool_fires_pre_and_failure_hooks(tmp_path):
