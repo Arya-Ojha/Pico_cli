@@ -7,89 +7,41 @@ dismisses with ``None`` (no insertion).
 
 from __future__ import annotations
 
-from textual.app import ComposeResult
-from textual.binding import Binding
-from textual.containers import Vertical
-from textual.screen import ModalScreen
-from textual.widgets import Footer, OptionList
+from .modal import MAX_ROW_WIDTH, PickerScreen, fit_text, picker_css
 
-
-#: Maximum visible characters per skill row (name + description). Rows are
-#: truncated with "..." so each skill occupies exactly one line.
-MAX_OPTION_WIDTH = 76
+#: Kept for backwards compatibility; prefer ``modal.MAX_ROW_WIDTH``.
+MAX_OPTION_WIDTH = MAX_ROW_WIDTH
 
 
 def format_skill_option(name: str, description: str = "") -> str:
-    """Return the display prompt for one skill entry, always one line.
+    """Return the display prompt for one skill entry (always one line).
 
     The description is collapsed to one line and cut with ``...`` so the
-    whole row (name + description) fits ``MAX_OPTION_WIDTH`` characters.
+    whole row (name + description) fits ``MAX_ROW_WIDTH`` characters.
     """
-    desc = " ".join(description.split())
-    if len(name) >= MAX_OPTION_WIDTH:
-        return f"[bold]{name[: MAX_OPTION_WIDTH - 3].rstrip()}...[/]"
-    budget = MAX_OPTION_WIDTH - len(name) - 2  # 2 for the separator
-    if len(desc) > budget:
-        desc = desc[: max(budget - 3, 0)].rstrip() + "..."
+    desc = fit_text(description, MAX_ROW_WIDTH - len(name) - 2)
+    if len(name) >= MAX_ROW_WIDTH:
+        return f"[bold]{fit_text(name, MAX_ROW_WIDTH)}[/]"
     if desc:
         return f"[bold]{name}[/]  [dim]{desc}[/]"
     return f"[bold]{name}[/]"
 
 
-class SkillPickerScreen(ModalScreen[str | None]):
+class SkillPickerScreen(PickerScreen[str | None]):
     """A modal screen listing loaded skills; dismisses with the chosen name."""
 
-    CSS = """
-    SkillPickerScreen {
-        align: center middle;
-        background: $background 60%;
-    }
-    #skill-picker-dialog {
-        width: 80%;
-        max-width: 100;
-        height: 70%;
-        border: round $primary;
-        background: $surface;
-        padding: 0 1;
-    }
-    #skill-picker-list {
-        height: 1fr;
-        border: none;
-        background: $surface;
-    }
-    """
+    CSS = picker_css(
+        "SkillPickerScreen", "skill-picker-dialog", "skill-picker-list"
+    )
 
-    BINDINGS = [
-        Binding("escape", "cancel", "Cancel"),
-        Binding("q", "cancel", "Cancel", show=False),
-    ]
+    dialog_id = "skill-picker-dialog"
+    list_id = "skill-picker-list"
 
-    def __init__(self, entries: list[dict]) -> None:
-        super().__init__()
-        self._entries = entries
+    def options(self) -> list[str]:
+        return [
+            format_skill_option(entry["name"], entry.get("description", ""))
+            for entry in self._entries
+        ]
 
-    def compose(self) -> ComposeResult:
-        with Vertical(id="skill-picker-dialog"):
-            option_list = OptionList(id="skill-picker-list")
-            for entry in self._entries:
-                option_list.add_option(
-                    format_skill_option(
-                        entry["name"], entry.get("description", "")
-                    )
-                )
-            option_list.highlighted = 0
-            yield option_list
-        yield Footer()
-
-    def on_option_list_option_selected(
-        self, event: OptionList.OptionSelected
-    ) -> None:
-        """Dismiss with the selected skill name."""
-        index = getattr(event, "option_index", None)
-        if index is None:
-            index = getattr(event, "index")
-        self.dismiss(self._entries[int(index)]["name"])
-
-    def action_cancel(self) -> None:
-        """Dismiss without inserting anything."""
-        self.dismiss(None)
+    def result_for(self, index: int) -> str | None:
+        return self._entries[index]["name"]

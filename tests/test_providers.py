@@ -648,6 +648,20 @@ def test_provider_picker_format_markers():
     assert "current" in marked
 
 
+def test_provider_picker_option_single_line():
+    import re
+
+    from pico_tui.modal import MAX_ROW_WIDTH
+    from pico_tui.provider_picker import format_provider_option
+
+    text = format_provider_option(
+        "OpenRouter", "z " * 100, configured=True, active=True
+    )
+    plain = re.sub(r"\[.*?\]", "", text)
+    assert "\n" not in plain
+    assert len(plain) <= MAX_ROW_WIDTH
+
+
 def test_manager_apply_provider_message(tmp_path):
     from pico_tui.app import _SessionManager
 

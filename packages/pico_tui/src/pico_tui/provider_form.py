@@ -16,27 +16,15 @@ from textual.widgets import Button, Footer, Input, Label
 
 from pico_ai.providers.spec import ProviderSpec
 
+from .modal import form_css
+
 
 class ProviderFormScreen(ModalScreen[dict[str, str] | None]):
     """A modal form built from a provider spec; dismisses with the values."""
 
-    CSS = """
-    ProviderFormScreen {
-        align: center middle;
-        background: $background 60%;
-    }
-    #provider-form-dialog {
-        width: 80%;
-        max-width: 90;
-        height: auto;
-        max-height: 90%;
-        border: round $primary;
-        background: $surface;
-        padding: 1 2;
-    }
-    #provider-form-dialog Label {
-        margin-top: 1;
-    }
+    CSS = (
+        form_css("ProviderFormScreen", "provider-form-dialog")
+        + """
     #provider-form-hint {
         color: $text-muted;
     }
@@ -44,10 +32,8 @@ class ProviderFormScreen(ModalScreen[dict[str, str] | None]):
         margin-top: 1;
         align: center middle;
     }
-    #provider-form-buttons Button {
-        margin: 0 1;
-    }
     """
+    )
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel"),

@@ -42,6 +42,17 @@ def test_format_history_option_marks_current():
     assert "current" in text
 
 
+def test_format_history_option_single_line():
+    import re
+
+    from pico_tui.modal import MAX_ROW_WIDTH
+
+    text = format_history_option(12, "assistant", "x" * 200, is_current=True)
+    plain = re.sub(r"\[.*?\]", "", text)
+    assert "\n" not in plain
+    assert len(plain) <= MAX_ROW_WIDTH
+
+
 # ── entries ───────────────────────────────────────────────────────
 
 

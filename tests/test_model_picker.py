@@ -35,6 +35,20 @@ def test_format_model_option_paid():
     assert "Alpha Paid" in text
 
 
+def test_format_model_option_single_line():
+    import re
+
+    from pico_tui.modal import MAX_ROW_WIDTH
+
+    text = format_model_option(
+        _m("vendor/" + "y" * 60, " ".join(["Model"] * 30), True),
+        current="vendor/" + "y" * 60,
+    )
+    plain = re.sub(r"\[.*?\]", "", text)
+    assert "\n" not in plain
+    assert len(plain) <= MAX_ROW_WIDTH
+
+
 @pytest.mark.asyncio
 async def test_list_models_parses_and_flags_free():
     class FakeResponse:
