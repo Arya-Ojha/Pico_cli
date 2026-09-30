@@ -183,7 +183,9 @@ class AgentSession:
         Only the given ``values`` are stored (merged over existing stored
         config); effective config still falls back to env vars and field
         defaults. The model resets to the stored/default model for the new
-        provider — model ids are provider-specific. Returns the adapter.
+        provider — model ids are provider-specific — and is written back to
+        settings so the next launch reopens on this provider + model.
+        Returns the adapter.
         """
         from pico_ai.providers import get_spec
 
@@ -200,6 +202,7 @@ class AgentSession:
         self.loop.provider = spec.create(config)
         self.model = config.get("model") or spec.default_model
         self.loop.model = self.model
+        self.settings.model = self.model
         return self.loop.provider
 
     # -- persistence --------------------------------------------------------

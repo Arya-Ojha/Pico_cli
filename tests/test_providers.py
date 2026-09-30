@@ -587,7 +587,26 @@ def test_session_set_provider_swaps_adapter_model_and_settings(tmp_path):
     assert session.provider_name == "OpenAI"
     assert session.model == "gpt-4o-mini"
     assert session.settings.provider == "openai"
+    assert session.settings.model == "gpt-4o-mini"
     assert session.settings.providers["openai"]["api_key"] == "sk-x"
+
+
+def test_provider_and_model_survive_settings_round_trip(tmp_path):
+    """Simulates reopening the TUI: switch, save, reload, rebuild."""
+    from pico_sdk.config import load_settings, save_settings
+    from pico_sdk.providers import create_provider as build
+
+    session = make_session(FakeProvider([]), tmp_path)
+    session.set_provider("ollama", {"model": "qwen2.5-coder"})
+    settings_path = tmp_path / "settings.json"
+    save_settings(session.settings, settings_path)
+
+    reopened = load_settings(settings_path)
+    assert reopened.provider == "ollama"
+    assert reopened.model == "qwen2.5-coder"
+    assert reopened.providers["ollama"]["model"] == "qwen2.5-coder"
+    rebuilt = build(reopened)
+    assert isinstance(rebuilt, OllamaProvider)
 
 
 def test_session_set_provider_unknown_raises(tmp_path):
