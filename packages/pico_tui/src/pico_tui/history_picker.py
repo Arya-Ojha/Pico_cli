@@ -24,11 +24,16 @@ class HistoryPickerScreen(PickerScreen[int | None]):
     """A modal screen listing branch nodes; dismisses with the chosen index."""
 
     CSS = picker_css(
-        "HistoryPickerScreen", "history-picker-dialog", "history-picker-list"
+        "HistoryPickerScreen",
+        "history-picker-dialog",
+        "history-picker-list",
+        "history-picker-search",
     )
 
     dialog_id = "history-picker-dialog"
     list_id = "history-picker-list"
+    search_id = "history-picker-search"
+    search_placeholder = "Filter history..."
 
     def __init__(self, entries: list[dict]) -> None:
         super().__init__(entries)

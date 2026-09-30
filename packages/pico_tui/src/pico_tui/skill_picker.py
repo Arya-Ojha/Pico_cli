@@ -31,11 +31,16 @@ class SkillPickerScreen(PickerScreen[str | None]):
     """A modal screen listing loaded skills; dismisses with the chosen name."""
 
     CSS = picker_css(
-        "SkillPickerScreen", "skill-picker-dialog", "skill-picker-list"
+        "SkillPickerScreen",
+        "skill-picker-dialog",
+        "skill-picker-list",
+        "skill-picker-search",
     )
 
     dialog_id = "skill-picker-dialog"
     list_id = "skill-picker-list"
+    search_id = "skill-picker-search"
+    search_placeholder = "Filter skills..."
 
     def options(self) -> list[str]:
         return [

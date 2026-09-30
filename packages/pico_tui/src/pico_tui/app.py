@@ -422,6 +422,9 @@ class PicoApp(App[None]):
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle a line submitted in the input bar."""
+        if event.input.id != "input-bar":
+            # Submitted from a modal (e.g. a picker filter bar) — not ours.
+            return
         input_widget = self.query_one("#input-bar", Input)
         input_widget.clear()
 

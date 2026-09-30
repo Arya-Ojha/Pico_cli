@@ -35,10 +35,13 @@ class ProviderPickerScreen(PickerScreen[str | None]):
         "ProviderPickerScreen",
         "provider-picker-dialog",
         "provider-picker-list",
+        "provider-picker-search",
     )
 
     dialog_id = "provider-picker-dialog"
     list_id = "provider-picker-list"
+    search_id = "provider-picker-search"
+    search_placeholder = "Filter providers..."
 
     def options(self) -> list[str]:
         return [

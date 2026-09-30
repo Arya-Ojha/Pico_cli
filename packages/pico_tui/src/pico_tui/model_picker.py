@@ -37,11 +37,16 @@ class ModelPickerScreen(PickerScreen[str | None]):
     """A modal screen listing available models; dismisses with the chosen id."""
 
     CSS = picker_css(
-        "ModelPickerScreen", "model-picker-dialog", "model-picker-list"
+        "ModelPickerScreen",
+        "model-picker-dialog",
+        "model-picker-list",
+        "model-picker-search",
     )
 
     dialog_id = "model-picker-dialog"
     list_id = "model-picker-list"
+    search_id = "model-picker-search"
+    search_placeholder = "Filter models..."
 
     def __init__(self, models: list[dict], current: str = "") -> None:
         super().__init__(sort_models(models))
