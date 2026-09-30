@@ -14,8 +14,9 @@ pico_ai ─► pico_core ─► pico_sdk ─► pico_tui
 
 - **Headless CLI** — `picoCLI run "do a task"` completes a coding task end-to-end with a single prompt.
 - **Interactive TUI** — `picoCLI-chat` is a full terminal UI (Textual + Rich) for back-and-forth sessions.
-- **Eight hardcoded core tools** — `read`, `write`, `edit`, `grep`, `fetch`, `websearch`, `bash`, and `todo` (see ADR-0003).
+- **Nine hardcoded core tools** — `read`, `write`, `edit`, `grep`, `fetch`, `websearch`, `bash`, `todo`, and `task` (see ADR-0003, ADR-0005).
 - **Todo tracking** — the agent tracks multi-step work with a `todo` tool (add / update / list / clear); the TUI shows the in-memory list in a read-only side panel that appears once the first todo exists. A run only ends once every todo is completed — stopping early nudges the agent back in. When the run ends clean, the list is cleared for the next run (a run stopped by the stuck-model guard keeps its open todos).
+- **Sub-agents** — the model delegates self-contained work via the `task` tool; each child runs isolated with its own session file, fresh todos, and restricted tools (overridable per spawn, never escalating past the parent), returning only a summary. Pure-delegation turns fan out in parallel; nesting is bounded (see ADR-0005).
 - **One-way LLM gateway** — all models reached through a single streaming OpenRouter client behind one unified "AI call" shape. Responses stream token-by-token.
 - **Six native providers** — OpenRouter, OpenAI, Anthropic, Gemini, DeepSeek, and local Ollama, each a one-file adapter (`pico_ai/providers/`) normalizing to the same event shape. Switch with `/provider` (picker + per-provider setup form for API key, URL, model) or `--provider` (see ADR-0004).
 - **Reasoning & usage** — thinking blocks are preserved in the transcript; token counts are tracked.
@@ -189,7 +190,8 @@ The test suite is network-free: it drives the whole agent loop through a scripte
 
 ## Domain vocabulary
 
-See [CONTEXT.md](CONTEXT.md) for the full glossary. Key terms: **session**, **node**, **payload**, **branch**, **fork**, **turn**, **tool** / **tool request** / **tool result**, **compaction**, **context window**, **provider**, **AI call**, **hook**, **skill**.
+See [CONTEXT.md](CONTEXT.md) for the full glossary. Key terms: **session**, **node**, **payload**, **branch**, **fork**, **turn**, **tool** / **tool request** / **tool result**, **sub-agent**, **compaction**, **context window**,
+**provider**, **AI call**, **hook**, **skill**.
 
 ## Documentation
 

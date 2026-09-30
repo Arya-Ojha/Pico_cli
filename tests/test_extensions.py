@@ -19,6 +19,7 @@ async def test_core_tools_are_hardcoded(tmp_path):
         "websearch",
         "bash",
         "todo",
+        "task",
     ]
 
 

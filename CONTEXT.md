@@ -11,8 +11,9 @@ The domain vocabulary for **pico**, a Python CLI coding agent with a hardcoded c
 - **Branch** — a timeline: the sequence of nodes from the root to a leaf. A session can hold many parallel branches.
 - **Fork** — rewinding to an earlier node and starting a new branch from it (for example, after a change that broke the codebase).
 - **Turn** — one user message plus the agent's full response to it, including any tool requests it makes.
-- **Tool** — a capability the agent can invoke. The core tools are **read**, **write**, **edit**, **grep**, **fetch**, **websearch**, and **bash**.
+- **Tool** — a capability the agent can invoke. The core tools are **read**, **write**, **edit**, **grep**, **fetch**, **websearch**, **bash**, **todo**, and **task**.
 - **Todo tool** — the agent-facing `todo` tool (actions `add` / `update` / `list` / `clear`) backed by a shared in-memory **todo list**; statuses are `pending`, `in_progress`, `completed`.
+- **Sub-agent** — a child agent loop spawned by the parent through the model-invoked `task` tool. It runs on its own session (persisted as its own file) with restricted tools, and only its final summary returns to the parent.
 - **Tool request** — the agent asking to run a tool.
 - **Tool result** — the output returned by running a tool.
 - **Compaction** — summarising older context so the session fits within the model's context window.

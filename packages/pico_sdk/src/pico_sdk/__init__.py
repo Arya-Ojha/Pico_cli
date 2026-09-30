@@ -10,6 +10,7 @@ from pico_core.session import (
     ToolResultPayload,
     UserPayload,
 )
+from pico_core.subagents import ChildSpec, SpawnTool
 
 from .config import Settings, load_settings
 from .extensions import ALLOWED_HOOKS, ExtensionManager
@@ -28,6 +29,8 @@ __all__ = [
     "parse_skill_file",
     "render_skills_prompt",
     "DEFAULT_SYSTEM_PROMPT",
+    "ChildSpec",
+    "SpawnTool",
     "AgentState",
     "LoopEvent",
     "RunResult",

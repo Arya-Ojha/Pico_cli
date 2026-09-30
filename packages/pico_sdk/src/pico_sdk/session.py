@@ -9,8 +9,9 @@ from typing import Any
 
 from pico_core.fsm import AgentLoop, LoopEvent, RunResult
 from pico_core.session import Session
+from pico_core.subagents import DEFAULT_CHILD_TOOLS, MAX_DEPTH, ChildSpec, SpawnTool
 from pico_core.todos import TodoList, TodoTool
-from pico_core.tools import BashTool, EditTool, FetchTool, GrepTool, ReadTool, ToolRegistry, WebSearchTool, WriteTool
+from pico_core.tools import BashTool, EditTool, FetchTool, GrepTool, ReadTool, ToolOutcome, ToolRegistry, WebSearchTool, WriteTool
 
 from .config import Settings, load_settings
 from .extensions import ExtensionManager
@@ -44,6 +45,7 @@ class AgentSession:
         "websearch",
         "bash",
         "todo",
+        "task",
     )
 
     def __init__(
@@ -62,6 +64,7 @@ class AgentSession:
         self.settings = settings or load_settings()
         self.model = model or self.settings.model
         self.working_dir = Path(working_dir) if working_dir else Path.cwd()
+        self.allow_bash = allow_bash
         self.extensions = ExtensionManager()
         self.provider_id: str = (
             getattr(provider, "provider_id", None)
@@ -152,8 +155,74 @@ class AgentSession:
             WebSearchTool(),
             BashTool(self.working_dir, enabled=allow_bash),
             TodoTool(self.todos),
+            SpawnTool(
+                factory=self._make_child_loop,
+                depth=0,
+                session_dir=Path(self.settings.session_dir).expanduser(),
+            ),
         ):
             self.tools.register(tool)
+
+    def _make_child_loop(self, spec: ChildSpec, depth: int) -> AgentLoop:
+        """Build an isolated child loop for a delegated task (ADR-0005).
+
+        The child gets a fresh session, fresh todos, and a restricted tool
+        allowlist (intersected with the parent's own gate so a parent can
+        never escalate). ``task`` is only registered when explicitly granted
+        and the nesting depth allows it.
+        """
+        allowed = (
+            list(spec.allowed_tools)
+            if spec.allowed_tools is not None
+            else list(DEFAULT_CHILD_TOOLS)
+        )
+        if self.settings.allowed_tools is not None:
+            allowed = [t for t in allowed if t in self.settings.allowed_tools]
+        if depth > MAX_DEPTH:
+            allowed = [t for t in allowed if t != "task"]
+        todos = TodoList()
+        registry = ToolRegistry()
+        for tool in (
+            ReadTool(self.working_dir),
+            WriteTool(self.working_dir),
+            EditTool(self.working_dir),
+            GrepTool(self.working_dir),
+            FetchTool(),
+            WebSearchTool(),
+            BashTool(self.working_dir, enabled=self.allow_bash),
+            TodoTool(todos),
+        ):
+            registry.register(tool)
+        if "task" in allowed:
+            registry.register(
+                SpawnTool(
+                    factory=self._make_child_loop,
+                    depth=depth,
+                    session_dir=Path(self.settings.session_dir).expanduser(),
+                )
+            )
+        return AgentLoop(
+            provider=self.loop.provider,
+            session=Session(),
+            tools=registry,
+            system_prompt=self.system_prompt,
+            model=spec.model or self.model,
+            context_window=self.settings.context_window,
+            reserve_tokens=self.settings.reserve_tokens,
+            hooks=self.extensions,
+            allowed_tools=allowed,
+        )
+
+    async def spawn(self, prompt: str, **kwargs: Any) -> ToolOutcome:
+        """Delegate ``prompt`` to a sub-agent and return its summary outcome.
+
+        Accepts the same keyword arguments as the ``task`` tool
+        (``description``, ``allowed_tools``, ``model``, ``max_turns``,
+        ``timeout_s``).
+        """
+        tool = self.tools.get("task")
+        assert tool is not None, "task tool is hardcoded in the core"
+        return await tool.run({"prompt": prompt, **kwargs})
 
     # -- running ------------------------------------------------------------
 

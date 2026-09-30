@@ -18,6 +18,7 @@ from rich.text import Text
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal
+from textual.events import MouseMove
 from textual.widgets import Footer, Header, Input, RichLog
 
 from pico_sdk import (
@@ -66,7 +67,8 @@ HELP_TEXT = """\
   [cyan]/undo, Ctrl+Z[/]    rewind to the previous user turn
   [cyan]/quit, Ctrl+Q[/]    save and exit
 💭 thinking streams in full while the model thinks, then collapses to one
-line — click '▸ show thinking' to expand or collapse it again.\
+line — click it to expand or collapse it again. Bash results also collapse
+to one line; click those to expand them too.\
 """
 
 
@@ -315,6 +317,7 @@ class PicoApp(App[None]):
         width: 1fr;
         height: 1fr;
         border: none;
+        padding: 0 1;
     }
     #chat-log:focus {
         border: none;
@@ -723,14 +726,13 @@ class PicoApp(App[None]):
         if segment.id is not None and segment.id in self._thinking_expanded:
             return (
                 f"[@click=app.toggle_thinking({segment.id})]"
-                f"[dim italic]{escape(segment.text)} ▾ hide[/][/]"
+                f"[dim italic]{escape(segment.text)}[/][/]"
             )
         preview, truncated = thinking_preview(segment.text)
         ellipsis = " …" if truncated else ""
         return (
             f"[@click=app.toggle_thinking({segment.id})]"
-            f"[dim italic]💭 thinking: {escape(preview)}{ellipsis} "
-            "▸ show thinking[/][/]"
+            f"[dim italic]💭 thinking: {escape(preview)}{ellipsis}[/][/]"
         )
 
     def _bash_renderable(self, segment: BashResultSegment) -> object:
@@ -742,17 +744,17 @@ class PicoApp(App[None]):
         if segment.id is not None and segment.id in self._bash_expanded:
             return (
                 f"[@click=app.toggle_bash({segment.id})]"
-                f"[dim]{escape(segment.body or '(no output)')} ▾ hide[/][/]"
+                f"[dim]{escape(segment.body or '(no output)')}[/][/]"
             )
         if segment.success:
             return (
                 f"[@click=app.toggle_bash({segment.id})]"
-                "[dim]✓ bash success ▸ show output[/][/]"
+                "[dim]✓ bash success[/][/]"
             )
         code = f" (exit {segment.exit_code})" if segment.exit_code is not None else ""
         return (
             f"[@click=app.toggle_bash({segment.id})]"
-            f"[red]✗ bash error{code} ▸ show error[/][/]"
+            f"[red]✗ bash error{code}[/][/]"
         )
 
     def _rerender_chat(self) -> None:
@@ -803,6 +805,33 @@ class PicoApp(App[None]):
         else:
             self._thinking_expanded.add(block_id)
         self._rerender_chat()
+
+    def _hovered_click_action(self) -> tuple[str, tuple] | None:
+        """Return the ``@click`` (action, args) under the mouse, if any.
+
+        Only the collapsed/expanded toggle lines in the chat log carry
+        ``@click`` spans; anything else (or the mouse outside the chat
+        log) yields ``None``.
+        """
+        chat_log = self.query_one("#chat-log", RichLog)
+        if self.mouse_over is not chat_log:
+            return None
+        action = (chat_log.hover_style.meta or {}).get("@click")
+        return action if isinstance(action, tuple) else None
+
+    def on_mouse_move(self, event: MouseMove) -> None:
+        """Show the pointer cursor over clickable toggle lines.
+
+        The ``pointer`` CSS property is widget-level, so it cannot express
+        "only over the link span" — instead drive the screen's pointer
+        shape directly (Kitty pointer-shape protocol; terminals without
+        support ignore it). Anything else falls back to Textual's
+        widget-based shape.
+        """
+        if self._hovered_click_action() is not None:
+            self.screen._pointer_shape = "pointer"
+        else:
+            self.screen.update_pointer_shape()
 
     # -- key binding actions --
 

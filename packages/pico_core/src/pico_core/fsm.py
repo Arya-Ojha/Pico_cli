@@ -12,6 +12,7 @@ Yolo mode means there is no approval/confirmation state.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator, Callable
 from enum import Enum
 from typing import Literal, Protocol
@@ -66,6 +67,7 @@ class RunResult(BaseModel):
     state: AgentState
     session: Session
     error: str | None = None
+    truncated: bool = False
 
 
 class HookSink(Protocol):
@@ -126,14 +128,16 @@ class AgentLoop:
         self.state = AgentState.IDLE
         self._started = False
         self._todo_nudges = 0
+        #: True when the last ``stream()`` stopped at ``max_turns``.
+        self.last_truncated = False
 
     # -- public -------------------------------------------------------------
 
-    async def run(self, prompt: str) -> RunResult:
+    async def run(self, prompt: str, *, max_turns: int | None = None) -> RunResult:
         """Run the full loop and return the final result."""
         text_parts: list[str] = []
         try:
-            async for event in self.stream(prompt):
+            async for event in self.stream(prompt, max_turns=max_turns):
                 if event.kind == "text":
                     text_parts.append(event.text)
         except Exception as exc:  # noqa: BLE001 - surface as error state
@@ -145,12 +149,18 @@ class AgentLoop:
                 error=str(exc),
             )
         return RunResult(
-            text="".join(text_parts), state=self.state, session=self.session
+            text="".join(text_parts),
+            state=self.state,
+            session=self.session,
+            truncated=self.last_truncated,
         )
 
-    async def stream(self, prompt: str) -> AsyncIterator[LoopEvent]:
+    async def stream(
+        self, prompt: str, *, max_turns: int | None = None
+    ) -> AsyncIterator[LoopEvent]:
         """Run the loop, yielding observable events as they happen."""
         self._set_state(AgentState.IDLE)
+        self.last_truncated = False
         yield self._state_event()
         if self._hooks is not None and not self._started:
             await self._hooks.on_session_start(self.session)
@@ -160,6 +170,7 @@ class AgentLoop:
             self.session.active_leaf_id, UserPayload(content=prompt)
         )
 
+        turns = 0
         while True:
             if self._needs_compaction():
                 async for event in self._compact():
@@ -167,6 +178,14 @@ class AgentLoop:
 
             self._set_state(AgentState.STREAMING)
             yield self._state_event()
+            turns += 1
+            if max_turns is not None and turns > max_turns:
+                # Turn cap hit (sub-agent bounding): stop cleanly with
+                # whatever text was produced so far.
+                self.last_truncated = True
+                self._set_state(AgentState.DONE)
+                yield self._state_event()
+                return
 
             request = self._build_request()
             blocks: list[AssistantBlock] = []
@@ -215,6 +234,22 @@ class AgentLoop:
             if any(c.name == "todo" for c in tool_calls):
                 # Progress on the list — reset the stuck-model counter.
                 self._todo_nudges = 0
+
+            if tool_calls and all(c.name == "task" for c in tool_calls):
+                # A turn of pure delegation fans out concurrently; requests
+                # are recorded first, then executions gather, then results
+                # are appended in call order so the tree stays deterministic.
+                for tool_call in tool_calls:
+                    request_payload = ToolRequestPayload(tool_call=tool_call)
+                    self.session.append(self.session.active_leaf_id, request_payload)
+                    yield LoopEvent(kind="tool_request", tool_request=request_payload)
+                results = await asyncio.gather(
+                    *(self._execute_tool(tool_call) for tool_call in tool_calls)
+                )
+                for result in results:
+                    self.session.append(self.session.active_leaf_id, result)
+                    yield LoopEvent(kind="tool_result", tool_result=result)
+                continue
 
             for tool_call in tool_calls:
                 request_payload = ToolRequestPayload(tool_call=tool_call)

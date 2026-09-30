@@ -11,6 +11,13 @@ from .session import (
     ToolResultPayload,
     UserPayload,
 )
+from .subagents import (
+    DEFAULT_CHILD_TOOLS,
+    MAX_DEPTH,
+    ChildFactory,
+    ChildSpec,
+    SpawnTool,
+)
 from .todos import TodoItem, TodoList, TodoTool, format_todos
 from .tools import (
     BashTool,
@@ -48,6 +55,11 @@ __all__ = [
     "ToolRegistry",
     "WebSearchTool",
     "WriteTool",
+    "DEFAULT_CHILD_TOOLS",
+    "MAX_DEPTH",
+    "ChildFactory",
+    "ChildSpec",
+    "SpawnTool",
     "TodoItem",
     "TodoList",
     "TodoTool",
