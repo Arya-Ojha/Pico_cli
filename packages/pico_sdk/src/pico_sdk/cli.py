@@ -37,7 +37,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--no-bash",
         action="store_true",
-        help="Disable unsandboxed bash (on by default).",
+        help="Disable unsandboxed bash (on by default; ignored when "
+        "allowed_tools is set without 'bash').",
     )
     run.add_argument("--model", default=None, help="Override the configured model.")
     run.add_argument("--cwd", default=None, help="Working directory (default: current).")

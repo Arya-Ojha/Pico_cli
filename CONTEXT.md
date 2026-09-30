@@ -1,6 +1,6 @@
 # Context
 
-The domain vocabulary for **pico**, a Python CLI coding agent inspired by Pi's modular, plugin-driven architecture.
+The domain vocabulary for **pico**, a Python CLI coding agent with a hardcoded core and curated extensions (Claude Code-style, see ADR-0003).
 
 ## Glossary
 
@@ -21,4 +21,5 @@ The domain vocabulary for **pico**, a Python CLI coding agent inspired by Pi's m
 - **Provider** — an LLM backend. Every provider is reached through a single gateway and exposed as one unified **AI call**.
 - **AI call** — the unified request/response shape used to talk to any provider.
 - **Headless** — running the agent programmatically (as a library) with no terminal UI.
-- **Extension** (also **plugin**) — a modular capability registered into the agent: a tool, a provider, or a UI widget. Extensions are loaded from a plugins directory or registered explicitly.
+- **Hook** — a curated, observe-only lifecycle callback (`session_start`, `pre_tool_use`, `post_tool_use`, `post_tool_failure`). Hooks cannot mutate arguments/results or veto execution.
+- **Skill** — a model-invoked `SKILL.md` markdown file (name + trigger description + instructions) discovered from `~/.pico/skills/*/SKILL.md` and inlined into the system prompt.

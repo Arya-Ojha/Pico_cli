@@ -14,13 +14,13 @@ pico_ai ─► pico_core ─► pico_sdk ─► pico_tui
 
 - **Headless CLI** — `picoCLI run "do a task"` completes a coding task end-to-end with a single prompt.
 - **Interactive TUI** — `picoCLI-chat` is a full terminal UI (Textual + Rich) for back-and-forth sessions.
-- **Four core tools** — `read`, `write`, `edit` (search/replace patches), and `bash`.
+- **Eight hardcoded core tools** — `read`, `write`, `edit`, `grep`, `fetch`, `websearch`, `bash`, and `todo` (see ADR-0003).
 - **Todo tracking** — the agent tracks multi-step work with a `todo` tool (add / update / list / clear); the TUI shows the in-memory list in a read-only side panel that appears once the first todo exists. A run only ends once every todo is completed — stopping early nudges the agent back in. When the run ends clean, the list is cleared for the next run (a run stopped by the stuck-model guard keeps its open todos).
 - **One-way LLM gateway** — all models reached through a single streaming OpenRouter client behind one unified "AI call" shape. Responses stream token-by-token.
 - **Reasoning & usage** — thinking blocks are preserved in the transcript; token counts are tracked.
 - **Session tree** — sessions are persisted as append-only trees of nodes; you can resume, rewind, and fork branches.
 - **Auto-compaction** — context is summarised automatically at a token threshold, plus a manual override.
-- **Extension hooks** — register providers, tools, and lifecycle hooks; load plugins from a directory.
+- **Curated extensions** — observe-only hooks (`session_start`, `pre_tool_use`, `post_tool_use`, `post_tool_failure`) and model-invoked `SKILL.md` skills from `~/.pico/skills/`; permission gating via `allowed_tools` (see ADR-0003).
 - **Yolo mode** — no approval prompts: it self-corrects by looping between streaming and tool execution.
 
 ## Packages
@@ -29,7 +29,7 @@ pico_ai ─► pico_core ─► pico_sdk ─► pico_tui
 |---|---|---|
 | `pico_ai` | LLM abstraction; unified "AI call" + OpenRouter client | ADR-0001 |
 | `pico_core` | The finite-state-machine agent loop + append-only session tree | ADR-0001, ADR-0002 |
-| `pico_sdk` | The headless `AgentSession` API + extension/plugin binding | ADR-0001 |
+| `pico_sdk` | The headless `AgentSession` API + curated hooks/skills | ADR-0001, ADR-0003 |
 | `pico_tui` | The interactive terminal UI (Textual + Rich) | ADR-0001 |
 
 Dependencies flow one way — `pico_ai` ← `pico_core` ← `pico_sdk` ← `pico_tui` (see [ADR-0001](docs/adr/0001-monorepo-package-split.md)). Sessions are a tree of immutable, append-only nodes (see [ADR-0002](docs/adr/0002-tree-based-session.md)).
@@ -70,7 +70,9 @@ Create `~/.pico/settings.json` to override defaults:
   "context_window": 128000,
   "reserve_tokens": 16384,
   "session_dir": "~/.pico/sessions",
-  "api_key_env": "OPENROUTER_API_KEY"
+  "api_key_env": "OPENROUTER_API_KEY",
+  "skills_dir": "~/.pico/skills",
+  "allowed_tools": null
 }
 ```
 
@@ -138,7 +140,7 @@ The test suite is network-free: it drives the whole agent loop through a scripte
 
 ## Domain vocabulary
 
-See [CONTEXT.md](CONTEXT.md) for the full glossary. Key terms: **session**, **node**, **payload**, **branch**, **fork**, **turn**, **tool** / **tool request** / **tool result**, **compaction**, **context window**, **provider**, **AI call**, **extension** (plugin).
+See [CONTEXT.md](CONTEXT.md) for the full glossary. Key terms: **session**, **node**, **payload**, **branch**, **fork**, **turn**, **tool** / **tool request** / **tool result**, **compaction**, **context window**, **provider**, **AI call**, **hook**, **skill**.
 
 ## Documentation
 

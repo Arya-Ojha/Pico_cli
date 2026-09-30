@@ -1,54 +1,64 @@
-"""Ticket 06 — extension binding: custom tools/providers, hooks, plugin loading."""
+"""ADR-0003 — hardcoded core: curated hooks, skills, permission gating."""
+
+import pytest
 
 from pico_ai.types import StreamEvent, ToolCall
-from pico_core.tools import ToolOutcome
+from pico_sdk.config import Settings
 
 from conftest import FakeProvider, make_session
 
 
-class EchoTool:
-    name = "echo"
-    description = "Echo text back."
-    input_schema = {
-        "type": "object",
-        "properties": {"text": {"type": "string"}},
-        "required": ["text"],
-    }
+async def test_core_tools_are_hardcoded(tmp_path):
+    session = make_session(FakeProvider([]), tmp_path)
+    assert session.tools.names() == [
+        "read",
+        "write",
+        "edit",
+        "grep",
+        "fetch",
+        "websearch",
+        "bash",
+        "todo",
+    ]
 
-    async def run(self, arguments):
-        return ToolOutcome(content=arguments.get("text", ""))
 
-
-async def test_register_custom_tool_is_invocable(tmp_path):
+async def test_curated_hooks_fire_and_failure_hook(tmp_path):
+    (tmp_path / "a.txt").write_text("hello", encoding="utf-8")
     provider = FakeProvider(
         [
-            [StreamEvent(kind="tool_call", tool_call=ToolCall(id="c1", name="echo", arguments={"text": "hi"}))],
+            [StreamEvent(kind="tool_call", tool_call=ToolCall(id="c1", name="read", arguments={"path": "a.txt"}))],
+            [StreamEvent(kind="tool_call", tool_call=ToolCall(id="c2", name="read", arguments={"path": "missing.txt"}))],
             [StreamEvent(kind="text", text="done")],
         ]
     )
     session = make_session(provider, tmp_path)
-    session.register_tool(EchoTool())
-    result = await session.run("echo hi")
-    assert result.text == "done"
-    # the echo tool ran and its result is in the tree
-    results = [
-        n.payload
-        for n in session.session.active_branch()
-        if n.payload.kind == "tool_result"
-    ]
-    assert results[0].content == "hi"
+    calls = []
+
+    async def on_start(session):
+        calls.append("session_start")
+
+    async def before(name, arguments):
+        calls.append(f"pre:{name}")
+
+    async def after(name, arguments, result):
+        calls.append(f"post:{name}")
+
+    async def failed(name, arguments, result):
+        calls.append(f"failed:{name}")
+
+    session.on("session_start", on_start)
+    session.on("pre_tool_use", before)
+    session.on("post_tool_use", after)
+    session.on("post_tool_failure", failed)
+    await session.run("read files")
+    assert "session_start" in calls
+    assert "pre:read" in calls
+    assert "post:read" in calls
+    # missing.txt errors, so the failure hook fires
+    assert "failed:read" in calls
 
 
-def test_register_and_use_provider(tmp_path):
-    session = make_session(FakeProvider([]), tmp_path)
-    other = FakeProvider([])
-    session.register_provider("fake", other)
-    assert "fake" in session.extensions.provider_names()
-    session.use_provider("fake")
-    assert session.loop.provider is other
-
-
-async def test_lifecycle_hooks_fire(tmp_path):
+async def test_legacy_hook_aliases_still_work(tmp_path):
     (tmp_path / "a.txt").write_text("hello", encoding="utf-8")
     provider = FakeProvider(
         [
@@ -58,40 +68,185 @@ async def test_lifecycle_hooks_fire(tmp_path):
     )
     session = make_session(provider, tmp_path)
     calls = []
-
-    async def on_start(session):
-        calls.append("on_session_start")
-
-    async def before(name, arguments):
-        calls.append(f"before:{name}")
-
-    async def after(name, arguments, result):
-        calls.append(f"after:{name}")
-
-    session.on("on_session_start", on_start)
-    session.on("tool.before.*", before)
-    session.on("tool.after.*", after)
+    session.on("on_session_start", lambda session: calls.append("start"))
+    session.on("tool.before.*", lambda name, arguments: calls.append("before"))
+    session.on("tool.after.*", lambda name, arguments, result: calls.append("after"))
     await session.run("read a.txt")
-    assert "on_session_start" in calls
-    assert "before:read" in calls
-    assert "after:read" in calls
+    assert calls == ["start", "before", "after"]
 
 
-def test_load_plugins_from_directory(tmp_path):
-    plugin_dir = tmp_path / "plugins"
-    plugin_dir.mkdir()
-    (plugin_dir / "myplugin.py").write_text(
-        "def register(session):\n"
-        "    from pico_core.tools import ToolOutcome\n"
-        "    class HelloTool:\n"
-        "        name = 'hello'\n"
-        "        description = 'say hello'\n"
-        "        input_schema = {'type': 'object'}\n"
-        "        async def run(self, arguments):\n"
-        "            return ToolOutcome(content='hello')\n"
-        "    session.register_tool(HelloTool())\n",
+def test_unknown_hook_rejected(tmp_path):
+    session = make_session(FakeProvider([]), tmp_path)
+    with pytest.raises(ValueError, match="unknown hook"):
+        session.on("register_anything", lambda: None)
+
+
+def test_hook_unsubscribe(tmp_path):
+    session = make_session(FakeProvider([]), tmp_path)
+    calls = []
+    off = session.on("pre_tool_use", lambda name, arguments: calls.append(name))
+    off()
+    assert session.extensions._hooks["pre_tool_use"] == []
+
+
+def test_no_generic_plugin_api(tmp_path):
+    session = make_session(FakeProvider([]), tmp_path)
+    for attr in ("register_tool", "register_provider", "use_provider", "load_plugins"):
+        assert not hasattr(session, attr), attr
+    assert not hasattr(session.extensions, "register_provider")
+    assert not hasattr(session.extensions, "load_plugins")
+
+
+def test_skills_discovered_into_prompt(tmp_path):
+    skills_root = tmp_path / "skills"
+    (skills_root / "commit-helper").mkdir(parents=True)
+    (skills_root / "commit-helper" / "SKILL.md").write_text(
+        "---\nname: commit-helper\ndescription: Use when committing code.\n---\nRun git status first.\n",
         encoding="utf-8",
     )
-    session = make_session(FakeProvider([]), tmp_path)
-    session.load_plugins(plugin_dir)
-    assert "hello" in session.tools.names()
+    settings = Settings(
+        session_dir=str(tmp_path), skills_dir=str(skills_root)
+    )
+    session = make_session(
+        FakeProvider([]), tmp_path, settings=settings, load_skills=True
+    )
+    assert "commit-helper" in session.system_prompt
+    assert "Use when committing code." in session.system_prompt
+
+
+async def test_allowed_tools_gating(tmp_path):
+    provider = FakeProvider(
+        [
+            [StreamEvent(kind="tool_call", tool_call=ToolCall(id="c1", name="read", arguments={"path": "a.txt"}))],
+            [StreamEvent(kind="text", text="done")],
+        ]
+    )
+    (tmp_path / "a.txt").write_text("hello", encoding="utf-8")
+    settings = Settings(session_dir=str(tmp_path), allowed_tools=["write"])
+    session = make_session(provider, tmp_path, settings=settings)
+    result = await session.run("read a.txt")
+    assert result.text == "done"
+    tool_results = [
+        n.payload
+        for n in session.session.active_branch()
+        if n.payload.kind == "tool_result"
+    ]
+    assert tool_results[0].is_error is True
+    assert "not allowed" in tool_results[0].content
+
+
+def test_project_skill_overrides_global(tmp_path):
+    global_root = tmp_path / "global-skills"
+    (global_root / "helper").mkdir(parents=True)
+    (global_root / "helper" / "SKILL.md").write_text(
+        "---\nname: helper\ndescription: Global version.\n---\nGlobal content.\n",
+        encoding="utf-8",
+    )
+    # project-local skill with the same name wins; tmp_path is the working dir
+    project_root = tmp_path / ".pico" / "skills"
+    (project_root / "helper").mkdir(parents=True)
+    (project_root / "helper" / "SKILL.md").write_text(
+        "---\nname: helper\ndescription: Project version.\n---\nProject content.\n",
+        encoding="utf-8",
+    )
+    settings = Settings(
+        session_dir=str(tmp_path), skills_dir=str(global_root)
+    )
+    session = make_session(
+        FakeProvider([]), tmp_path, settings=settings, load_skills=True
+    )
+    assert "Project version." in session.system_prompt
+    assert "Global version." not in session.system_prompt
+
+
+def test_skills_capped_at_max(tmp_path):
+    from pico_sdk.skills import MAX_SKILLS
+
+    skills_root = tmp_path / "many-skills"
+    for i in range(MAX_SKILLS + 5):
+        d = skills_root / f"skill-{i:02d}"
+        d.mkdir(parents=True)
+        (d / "SKILL.md").write_text(
+            f"---\nname: skill-{i:02d}\ndescription: Skill {i}.\n---\nContent {i}.\n",
+            encoding="utf-8",
+        )
+    settings = Settings(
+        session_dir=str(tmp_path), skills_dir=str(skills_root)
+    )
+    session = make_session(
+        FakeProvider([]), tmp_path, settings=settings, load_skills=True
+    )
+    # capped and alphabetical: skill-24 must be cut
+    assert "skill-24" not in session.system_prompt
+    assert "skill-00" in session.system_prompt
+
+
+async def test_unknown_tool_fires_pre_and_failure_hooks(tmp_path):
+    provider = FakeProvider(
+        [
+            [StreamEvent(kind="tool_call", tool_call=ToolCall(id="c1", name="nope", arguments={}))],
+            [StreamEvent(kind="text", text="done")],
+        ]
+    )
+    session = make_session(provider, tmp_path)
+    calls = []
+    session.on("pre_tool_use", lambda name, arguments: calls.append(f"pre:{name}"))
+    session.on(
+        "post_tool_failure",
+        lambda name, arguments, result: calls.append(f"failed:{name}"),
+    )
+    await session.run("try unknown")
+    assert "pre:nope" in calls
+    assert "failed:nope" in calls
+
+
+async def test_denied_tool_fires_pre_and_failure_hooks(tmp_path):
+    provider = FakeProvider(
+        [
+            [StreamEvent(kind="tool_call", tool_call=ToolCall(id="c1", name="read", arguments={"path": "a.txt"}))],
+            [StreamEvent(kind="text", text="done")],
+        ]
+    )
+    settings = Settings(session_dir=str(tmp_path), allowed_tools=[])
+    session = make_session(provider, tmp_path, settings=settings)
+    calls = []
+    session.on("pre_tool_use", lambda name, arguments: calls.append(f"pre:{name}"))
+    session.on(
+        "post_tool_failure",
+        lambda name, arguments, result: calls.append(f"failed:{name}"),
+    )
+    await session.run("read a.txt")
+    assert "pre:read" in calls
+    assert "failed:read" in calls
+
+
+async def test_allowed_tools_empty_blocks_everything(tmp_path):
+    provider = FakeProvider(
+        [
+            [StreamEvent(kind="tool_call", tool_call=ToolCall(id="c1", name="read", arguments={"path": "a.txt"}))],
+            [StreamEvent(kind="text", text="done")],
+        ]
+    )
+    (tmp_path / "a.txt").write_text("hello", encoding="utf-8")
+    settings = Settings(session_dir=str(tmp_path), allowed_tools=[])
+    session = make_session(provider, tmp_path, settings=settings)
+    await session.run("read a.txt")
+    tool_results = [
+        n.payload
+        for n in session.session.active_branch()
+        if n.payload.kind == "tool_result"
+    ]
+    assert tool_results[0].is_error is True
+    assert "not allowed" in tool_results[0].content
+
+
+def test_unknown_allowed_tool_name_warns(tmp_path):
+    import warnings
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        settings = Settings(
+            session_dir=str(tmp_path), allowed_tools=["read", "bogus"]
+        )
+        make_session(FakeProvider([]), tmp_path, settings=settings)
+    assert any("bogus" in str(w.message) for w in caught)

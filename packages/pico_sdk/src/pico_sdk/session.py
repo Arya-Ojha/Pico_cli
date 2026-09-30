@@ -1,7 +1,8 @@
-"""The headless library API: ``AgentSession``."""
+"""The headless library API: ``AgentSession`` (hardcoded core, ADR-0003)."""
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,7 @@ from pico_core.tools import BashTool, EditTool, FetchTool, GrepTool, ReadTool, T
 
 from .config import Settings, load_settings
 from .extensions import ExtensionManager
+from .skills import discover_skills, merge_skills, render_skills_prompt
 
 DEFAULT_SYSTEM_PROMPT = (
     "You are pico, a coding agent. You can read, write, and edit files, search "
@@ -26,7 +28,23 @@ DEFAULT_SYSTEM_PROMPT = (
 
 
 class AgentSession:
-    """A headless agent session: provider + tools + session tree + extensions."""
+    """A headless agent session: hardcoded provider + tools + session tree.
+
+    The core is non-replaceable (ADR-0003). Curated extensions only: fixed
+    lifecycle hooks via :meth:`on` and model-invoked ``SKILL.md`` skills.
+    """
+
+    #: Core tool names in registration order (permission-gating vocabulary).
+    CORE_TOOLS = (
+        "read",
+        "write",
+        "edit",
+        "grep",
+        "fetch",
+        "websearch",
+        "bash",
+        "todo",
+    )
 
     def __init__(
         self,
@@ -39,13 +57,35 @@ class AgentSession:
         session_id: str | None = None,
         session: Session | None = None,
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
+        load_skills: bool = True,
     ) -> None:
         self.settings = settings or load_settings()
         self.model = model or self.settings.model
         self.working_dir = Path(working_dir) if working_dir else Path.cwd()
         self.extensions = ExtensionManager()
 
+        if self.settings.allowed_tools is not None:
+            unknown = set(self.settings.allowed_tools) - set(self.CORE_TOOLS)
+            if unknown:
+                warnings.warn(
+                    f"unknown tools in allowed_tools (ignored): "
+                    f"{sorted(unknown)}; valid: {list(self.CORE_TOOLS)}",
+                    stacklevel=2,
+                )
+
         self.system_prompt = system_prompt
+        if load_skills:
+            # Global skills plus project-local override
+            # (<cwd>/.pico/skills wins on name conflicts), merged and capped.
+            skills = merge_skills(
+                [
+                    discover_skills([self.settings.skills_dir]),
+                    discover_skills([self.working_dir / ".pico" / "skills"]),
+                ]
+            )
+            skills_section = render_skills_prompt(skills)
+            if skills_section:
+                self.system_prompt = f"{system_prompt}\n\n{skills_section}"
 
         self.session = session or (Session(id=session_id) if session_id else Session())
         self.tools = ToolRegistry()
@@ -61,6 +101,7 @@ class AgentSession:
             context_window=self.settings.context_window,
             reserve_tokens=self.settings.reserve_tokens,
             hooks=self.extensions,
+            allowed_tools=self.settings.allowed_tools,
         )
 
     @property
@@ -85,9 +126,12 @@ class AgentSession:
         """Return the current estimated token count."""
         return self.loop.estimate_tokens()
 
-    # -- core tools ---------------------------------------------------------
+    # -- core tools (hardcoded, non-replaceable) ------------------------------
 
     def _register_core_tools(self, allow_bash: bool) -> None:
+        # Precedence: the loop-level ``allowed_tools`` gate (when set) rejects
+        # before any tool runs, so it wins over this per-tool flag. When
+        # ``allowed_tools`` is None, ``allow_bash`` decides for bash.
         for tool in (
             ReadTool(self.working_dir),
             WriteTool(self.working_dir),
@@ -114,25 +158,11 @@ class AgentSession:
     async def compact(self, instructions: str = "") -> None:
         await self.loop.compact(instructions)
 
-    # -- extension binding --------------------------------------------------
+    # -- curated extensions -------------------------------------------------
+    # Hooks are observe-only; see ``pico_sdk.extensions.ALLOWED_HOOKS``.
 
-    def register_tool(self, tool: Any) -> None:
-        self.tools.register(tool)
-
-    def register_provider(self, name: str, provider: Any) -> None:
-        self.extensions.register_provider(name, provider)
-
-    def use_provider(self, name: str) -> None:
-        provider = self.extensions.get_provider(name)
-        if provider is None:
-            raise KeyError(f"unknown provider: {name}")
-        self.loop.provider = provider
-
-    def on(self, event: str, callback: Any) -> None:
-        self.extensions.on(event, callback)
-
-    def load_plugins(self, directory: str | Path) -> None:
-        self.extensions.load_plugins(directory, self)
+    def on(self, event: str, callback: Any) -> Any:
+        return self.extensions.on(event, callback)
 
     # -- persistence --------------------------------------------------------
 

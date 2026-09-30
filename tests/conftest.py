@@ -23,9 +23,10 @@ class FakeProvider:
 
 def make_session(provider, tmp_path, **kwargs) -> AgentSession:
     """Build an AgentSession whose sessions are persisted under ``tmp_path``."""
+    kwargs.setdefault("load_skills", False)
+    kwargs.setdefault("settings", Settings(session_dir=str(tmp_path)))
     return AgentSession(
         provider=provider,
-        settings=Settings(session_dir=str(tmp_path)),
         working_dir=tmp_path,
         **kwargs,
     )

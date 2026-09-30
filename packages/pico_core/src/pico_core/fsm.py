@@ -110,6 +110,7 @@ class AgentLoop:
         reserve_tokens: int = 16_384,
         summarizer: Summarizer | None = None,
         hooks: HookSink | None = None,
+        allowed_tools: list[str] | None = None,
     ) -> None:
         self.provider = provider
         self.session = session
@@ -120,6 +121,8 @@ class AgentLoop:
         self.reserve_tokens = reserve_tokens
         self._summarizer = summarizer or self._default_summarizer
         self._hooks = hooks
+        # Permission gating (ADR-0003): None allows every registered tool.
+        self.allowed_tools = list(allowed_tools) if allowed_tools is not None else None
         self.state = AgentState.IDLE
         self._started = False
         self._todo_nudges = 0
@@ -361,16 +364,36 @@ class AgentLoop:
             tool.todos.clear_completed()
 
     async def _execute_tool(self, tool_call: ToolCall) -> ToolResultPayload:
+        # Every attempted call fires pre_tool_use first, so hook observers see
+        # a complete attempt log; every terminal path below fires tool_after
+        # (which fans out to post_tool_use and, on error, post_tool_failure).
+        if self._hooks is not None:
+            await self._hooks.tool_before(tool_call.name, tool_call.arguments)
+        if self.allowed_tools is not None and tool_call.name not in self.allowed_tools:
+            result = ToolResultPayload(
+                tool_call_id=tool_call.id,
+                name=tool_call.name,
+                content=f"error: tool not allowed: {tool_call.name}",
+                is_error=True,
+            )
+            if self._hooks is not None:
+                await self._hooks.tool_after(
+                    tool_call.name, tool_call.arguments, result
+                )
+            return result
         tool = self.tools.get(tool_call.name)
         if tool is None:
-            return ToolResultPayload(
+            result = ToolResultPayload(
                 tool_call_id=tool_call.id,
                 name=tool_call.name,
                 content=f"error: unknown tool: {tool_call.name}",
                 is_error=True,
             )
-        if self._hooks is not None:
-            await self._hooks.tool_before(tool_call.name, tool_call.arguments)
+            if self._hooks is not None:
+                await self._hooks.tool_after(
+                    tool_call.name, tool_call.arguments, result
+                )
+            return result
         try:
             outcome = await tool.run(tool_call.arguments)
         except Exception as exc:  # noqa: BLE001 - surface as a result
