@@ -21,6 +21,10 @@ class ToolCall(BaseModel):
     id: str
     name: str
     arguments: dict = Field(default_factory=dict)
+    # Opaque replay token set by providers that require one (e.g. Gemini's
+    # thoughtSignature, which must be returned verbatim in later requests or
+    # the API rejects them). Ignored by all other providers.
+    thought_signature: str | None = None
 
 
 class Message(BaseModel):

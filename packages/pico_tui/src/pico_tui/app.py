@@ -30,11 +30,22 @@ from pico_sdk import (
 )
 from pico_sdk.cli import apply_cli_overrides
 from pico_sdk.config import load_settings, save_settings
-from pico_sdk.providers import FREE_MODEL_ALIAS, create_provider, resolve_free_model
+from pico_sdk.providers import (
+    FREE_MODEL_ALIAS,
+    create_provider,
+    describe_providers,
+    effective_config,
+    missing_required,
+    resolve_free_model,
+)
+
+from pico_ai.providers import get_spec, provider_ids
 
 from .commands import Command, Prompt, parse_line
 from .history_picker import HistoryPickerScreen
 from .model_picker import ModelPickerScreen
+from .provider_form import ProviderFormScreen
+from .provider_picker import ProviderPickerScreen
 from .render import _truncate, render_event
 from .status_bar import ContextStatusBar
 from .todo_panel import TodoPanel
@@ -46,6 +57,9 @@ HELP_TEXT = """\
   [cyan]/compact, Ctrl+K[/] summarise older turns (optionally with steering text)
   [cyan]/model <name>[/]   change the LLM model for this session
                           (/model alone opens an interactive model picker)
+  [cyan]/provider [id][/] select the LLM provider — opens a picker, then a
+                          setup form for its API key, URL, and other options
+                          (/provider <id> jumps straight to that form)
   [cyan]/skills[/]         list loaded SKILL.md skills
   [cyan]/fork <n|id>[/]     rewind to a node and start a new branch
   [cyan]/undo, Ctrl+Z[/]    rewind to the previous user turn
@@ -262,6 +276,12 @@ class _SessionManager:
         except KeyError:
             return f"error: unknown node id: {arg}"
 
+    def apply_provider(self, provider_id: str, values: dict[str, str]) -> str:
+        """Switch provider (storing form values) and report what changed."""
+        spec = get_spec(provider_id)  # KeyError on unknown id
+        self.session.set_provider(provider_id, values)
+        return f"switched to {spec.display_name} (model: {self.session.model})"
+
     def skills_text(self) -> Table | Text:
         """Return a Rich renderable listing loaded skills."""
         skills = self.session.skills
@@ -318,9 +338,10 @@ class PicoApp(App[None]):
         ("f1", "show_help", "Help"),
     ]
 
-    def __init__(self, mgr: _SessionManager) -> None:
+    def __init__(self, mgr: _SessionManager, *, startup_notice: str = "") -> None:
         super().__init__()
         self._mgr = mgr
+        self._startup_notice = startup_notice
         self._streaming = False
         # Everything written to the chat log, in order. Thinking blocks are
         # stored as ThinkingSegment so they can collapse/expand on click.
@@ -355,6 +376,10 @@ class PicoApp(App[None]):
         self.query_one("#input-bar", Input).focus()
         self._update_status_bar()
         self._refresh_todo_panel()
+        if self._startup_notice:
+            self._write_chat(
+                Panel(self._startup_notice, title="setup", border_style="yellow")
+            )
 
     def _refresh_todo_panel(self) -> None:
         """Re-render the todo side panel (auto-hides while empty)."""
@@ -434,6 +459,20 @@ class PicoApp(App[None]):
             self._write_chat(Text(msg, style="dim"))
         elif cmd.kind == "skills":
             self._write_chat(self._mgr.skills_text())
+        elif cmd.kind == "provider":
+            if cmd.arg:
+                if cmd.arg in provider_ids():
+                    self._show_provider_form(cmd.arg)
+                else:
+                    self._write_chat(
+                        Text(
+                            f"error: unknown provider: {cmd.arg} "
+                            f"(available: {', '.join(provider_ids())})",
+                            style="dim",
+                        )
+                    )
+            else:
+                self._show_provider_picker()
 
     # -- history picker --
 
@@ -454,6 +493,15 @@ class PicoApp(App[None]):
         self.push_screen(HistoryPickerScreen(entries), callback=_on_selected)
 
     # -- model picker --
+
+    def _persist_settings(self) -> None:
+        """Save settings to disk; failures are non-fatal (convenience)."""
+        try:
+            save_settings(self._mgr.session.settings)
+        except Exception as exc:
+            self._write_chat(
+                Text(f"(could not save settings: {exc})", style="dim")
+            )
 
     def _persist_model(self, model_id: str) -> None:
         """Remember the user's model choice so the next launch opens with it.
@@ -495,6 +543,56 @@ class PicoApp(App[None]):
             ModelPickerScreen(models, current=self._mgr.session.model),
             callback=_on_selected,
         )
+
+    # -- provider picker + setup form --
+
+    def _show_provider_picker(self) -> None:
+        """Show the provider picker; the pick opens its setup form."""
+        entries = describe_providers(self._mgr.session.settings)
+
+        def _on_selected(provider_id: str | None) -> None:
+            if provider_id is None:
+                return
+            self._show_provider_form(provider_id)
+
+        self.push_screen(ProviderPickerScreen(entries), callback=_on_selected)
+
+    def _show_provider_form(self, provider_id: str) -> None:
+        """Show the setup form for one provider (API key, URL, …)."""
+        try:
+            spec = get_spec(provider_id)
+        except KeyError:
+            self._write_chat(
+                Text(f"error: unknown provider: {provider_id}", style="dim")
+            )
+            return
+        initial = effective_config(provider_id, self._mgr.session.settings)
+
+        def _on_saved(values: dict[str, str] | None) -> None:
+            if values is None:
+                return
+            self._apply_provider(provider_id, values, initial)
+
+        self.push_screen(ProviderFormScreen(spec, initial), callback=_on_saved)
+
+    def _apply_provider(
+        self,
+        provider_id: str,
+        values: dict[str, str],
+        initial: dict[str, str],
+    ) -> None:
+        """Store only changed form values, switch, persist, refresh."""
+        changed = {k: v for k, v in values.items() if v != initial.get(k, "")}
+        try:
+            msg = self._mgr.apply_provider(provider_id, changed)
+        except KeyError:
+            self._write_chat(
+                Text(f"error: unknown provider: {provider_id}", style="dim")
+            )
+            return
+        self._persist_settings()
+        self._update_status_bar()
+        self._write_chat(Text(msg, style="dim"))
 
     # -- prompt to agent streaming --
 
@@ -728,13 +826,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--no-skills", action="store_true", help="Disable SKILL.md loading."
     )
+    parser.add_argument(
+        "--provider", default=None, help="Provider id (e.g. 'openai', 'ollama')."
+    )
     args = parser.parse_args(argv)
 
     settings = load_settings()
+    if args.provider:
+        settings.provider = args.provider
     model = args.model or settings.model
     load_skills = apply_cli_overrides(args, settings)
     provider = create_provider(settings)
-    if model == FREE_MODEL_ALIAS:
+    if model == FREE_MODEL_ALIAS and settings.provider == "openrouter":
         # Resolve the alias to a concrete free model available right now;
         # fall back to the alias itself (surfaced as an API error later)
         # if the lookup fails.
@@ -762,7 +865,18 @@ def main(argv: list[str] | None = None) -> int:
             load_skills=load_skills,
         )
     mgr = _SessionManager(session)
-    app = PicoApp(mgr)
+    startup_notice = ""
+    missing = missing_required(settings.provider, settings)
+    if missing:
+        try:
+            provider_label = get_spec(settings.provider).display_name
+        except KeyError:
+            provider_label = settings.provider
+        startup_notice = (
+            f"Provider {provider_label} is missing required config: "
+            f"{', '.join(missing)}. Use /provider to configure it."
+        )
+    app = PicoApp(mgr, startup_notice=startup_notice)
     app.run()
     return 0
 

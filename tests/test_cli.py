@@ -48,6 +48,13 @@ def test_no_bash_flag_disables_bash():
     assert args.no_bash is True
 
 
+def test_provider_flag_defaults_none():
+    args = build_parser().parse_args(["run", "hi"])
+    assert args.provider is None
+    args = build_parser().parse_args(["run", "hi", "--provider", "ollama"])
+    assert args.provider == "ollama"
+
+
 def test_allow_tools_flag_parses_csv():
     args = build_parser().parse_args(["run", "hi", "--allow-tools", "read,grep,bash"])
     assert args.allow_tools == "read,grep,bash"

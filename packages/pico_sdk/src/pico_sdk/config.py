@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Settings(BaseModel):
@@ -16,6 +16,11 @@ class Settings(BaseModel):
     reserve_tokens: int = 16_384
     session_dir: str = "~/.pico/sessions"
     api_key_env: str = "OPENROUTER_API_KEY"
+    # Active provider id (see ``pico_ai.providers`` registry).
+    provider: str = "openrouter"
+    # Per-provider stored config, e.g. {"openai": {"api_key": "sk-…"}}.
+    # Secrets live here in plaintext — prefer env vars for shared machines.
+    providers: dict[str, dict[str, str]] = Field(default_factory=dict)
     # Curated-extension settings (ADR-0003: hardcoded core).
     skills_dir: str = "~/.pico/skills"
     # Permission gating: which core tools the model may invoke.

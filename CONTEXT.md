@@ -19,6 +19,7 @@ The domain vocabulary for **pico**, a Python CLI coding agent with a hardcoded c
 - **Context window** — the token budget of the model in use.
 - **Reserve tokens** — the portion of the context window held back for the model's own response.
 - **Provider** — an LLM backend. Every provider is reached through a single gateway and exposed as one unified **AI call**.
+- **Adapter** — one Python module per provider (`pico_ai/providers/`) converting that backend's wire format to the app's default event shape. The registry is a hardcoded host-owned list, not a plugin API (see ADR-0004).
 - **AI call** — the unified request/response shape used to talk to any provider.
 - **Headless** — running the agent programmatically (as a library) with no terminal UI.
 - **Hook** — a curated, observe-only lifecycle callback (`session_start`, `pre_tool_use`, `post_tool_use`, `post_tool_failure`). Hooks cannot mutate arguments/results or veto execution.

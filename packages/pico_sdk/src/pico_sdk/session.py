@@ -63,6 +63,11 @@ class AgentSession:
         self.model = model or self.settings.model
         self.working_dir = Path(working_dir) if working_dir else Path.cwd()
         self.extensions = ExtensionManager()
+        self.provider_id: str = (
+            getattr(provider, "provider_id", None)
+            or self.settings.provider
+            or "openrouter"
+        )
 
         if self.settings.allowed_tools is not None:
             unknown = set(self.settings.allowed_tools) - set(self.CORE_TOOLS)
@@ -112,6 +117,9 @@ class AgentSession:
     @property
     def provider_name(self) -> str:
         """Return a human-readable provider name."""
+        display = getattr(self.loop.provider, "display_name", None)
+        if display:
+            return str(display)
         provider_class = type(self.loop.provider).__name__
         # Convert CamelCase to readable name
         if "OpenRouter" in provider_class:
@@ -164,6 +172,35 @@ class AgentSession:
 
     def on(self, event: str, callback: Any) -> Any:
         return self.extensions.on(event, callback)
+
+    # -- providers ----------------------------------------------------------
+
+    def set_provider(
+        self, provider_id: str, values: dict[str, str] | None = None
+    ) -> Any:
+        """Switch the active provider, storing ``values`` into settings.
+
+        Only the given ``values`` are stored (merged over existing stored
+        config); effective config still falls back to env vars and field
+        defaults. The model resets to the stored/default model for the new
+        provider — model ids are provider-specific. Returns the adapter.
+        """
+        from pico_ai.providers import get_spec
+
+        from .providers import effective_config
+
+        spec = get_spec(provider_id)  # KeyError on unknown id
+        stored = dict(self.settings.providers.get(provider_id, {}))
+        if values:
+            stored.update(values)
+        self.settings.providers[provider_id] = stored
+        self.settings.provider = provider_id
+        self.provider_id = provider_id
+        config = effective_config(provider_id, self.settings)
+        self.loop.provider = spec.create(config)
+        self.model = config.get("model") or spec.default_model
+        self.loop.model = self.model
+        return self.loop.provider
 
     # -- persistence --------------------------------------------------------
 

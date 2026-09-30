@@ -1,4 +1,10 @@
-"""OpenRouter provider: streams chat completions and normalizes to StreamEvents."""
+"""Shared base for OpenAI chat-completions-compatible providers.
+
+Covers any backend speaking ``POST {base}/chat/completions`` with SSE
+``data:`` chunks shaped like OpenAI's (``choices[].delta``,
+``finish_reason``, ``usage``). Subclasses only set endpoint defaults and
+identity — the wire conversion lives here, once.
+"""
 
 from __future__ import annotations
 
@@ -8,69 +14,61 @@ from collections.abc import AsyncIterator
 
 import httpx
 
-from .types import AICallRequest, StreamEvent, ToolCall, Usage
+from ..types import AICallRequest, StreamEvent, ToolCall, Usage
 
 
-class OpenRouterProvider:
-    """Streams chat completions from OpenRouter and normalizes them."""
+class OpenAICompatProvider:
+    """Streams chat completions and normalizes them to ``StreamEvent``."""
 
-    provider_id = "openrouter"
-    display_name = "OpenRouter"
+    provider_id: str = "openai-compat"
+    display_name: str = "OpenAI-compatible"
+    completions_path: str = "/chat/completions"
+    models_path: str = "/models"
 
     def __init__(
         self,
-        api_key: str,
-        base_url: str = "https://openrouter.ai/api/v1",
+        api_key: str = "",
+        base_url: str = "https://api.openai.com/v1",
+        *,
         client: httpx.AsyncClient | None = None,
         timeout: httpx.Timeout | None = None,
         first_token_timeout: float = 60.0,
+        extra_headers: dict[str, str] | None = None,
     ) -> None:
         self._api_key = api_key
-        self._base_url = base_url
+        self._base_url = base_url.rstrip("/")
         self._client = client
-        # Streaming LLM responses can take a while before the first token; the
-        # httpx default (5s) is far too short, so default to a generous read.
         self._timeout = timeout or httpx.Timeout(300.0, connect=10.0)
-        # Abort if the model produces no first token within this many seconds;
-        # without it a stalled request looks like an infinite hang.
         self._first_token_timeout = first_token_timeout
-        # model id -> whether the model supports tool calling (populated by
-        # list_models); unknown models are assumed to support tools.
-        self._tool_support: dict[str, bool] = {}
+        self._extra_headers = extra_headers or {}
+
+    # -- streaming ----------------------------------------------------------
 
     async def stream(self, request: AICallRequest) -> AsyncIterator[StreamEvent]:
         payload = self._build_payload(request)
         headers = {
-            "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
+            **self._extra_headers,
         }
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
         client = self._client or httpx.AsyncClient(timeout=self._timeout)
         pending: dict[int, dict] = {}
         response_cm = client.stream(
             "POST",
-            f"{self._base_url}/chat/completions",
+            f"{self._base_url}{self.completions_path}",
             json=payload,
             headers=headers,
         )
         response: httpx.Response | None = None
         try:
-            # Bound the wait for the response headers plus the first SSE line:
-            # a stalled upstream (e.g. a broken/free model) would otherwise
-            # hang for the full 300s read timeout looking like an infinite
-            # spin. Once tokens are flowing, the httpx read timeout governs
-            # inter-chunk gaps.
             try:
                 async with asyncio.timeout(self._first_token_timeout):
                     response = await response_cm.__aenter__()
                     if response.status_code >= 400:
-                        # Surface the API's error body: raise_for_status()
-                        # alone hides the actual reason (e.g. unsupported
-                        # tool calling for the chosen model).
-                        body = (await response.aread()).decode(
-                            errors="replace"
-                        )
+                        body = (await response.aread()).decode(errors="replace")
                         raise RuntimeError(
-                            f"OpenRouter error {response.status_code} "
+                            f"{self.display_name} error {response.status_code} "
                             f"for model '{request.model}': "
                             f"{body[:500]}"
                         )
@@ -114,18 +112,17 @@ class OpenRouterProvider:
         async for item in rest:
             yield item
 
-    async def list_models(self) -> list[dict]:
-        """Return the available models from OpenRouter.
+    # -- models -------------------------------------------------------------
 
-        Each entry is a dict with keys ``id``, ``name`` and ``is_free``.
-        """
-        headers = {}
+    async def list_models(self) -> list[dict]:
+        """Return available models (OpenAI ``/models`` shape)."""
+        headers = dict(self._extra_headers)
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
         client = self._client or httpx.AsyncClient(timeout=self._timeout)
         try:
             response = await client.get(
-                f"{self._base_url}/models",
+                f"{self._base_url}{self.models_path}",
                 headers=headers,
             )
             response.raise_for_status()
@@ -133,30 +130,17 @@ class OpenRouterProvider:
         finally:
             if self._client is None:
                 await client.aclose()
-        models: list[dict] = []
-        for entry in data:
-            pricing = entry.get("pricing") or {}
-            is_free = (
-                str(pricing.get("prompt", "1")).strip() in ("0", "0.0", "-1")
-                and str(pricing.get("completion", "1")).strip() in ("0", "0.0", "-1")
-            )
-            supported = entry.get("supported_parameters") or []
-            supports_tools = any(
-                p in supported for p in ("tools", "tool_choice")
-            )
-            model_id = entry.get("id", "")
-            # Remember tool support so stream() can omit tools for models
-            # that reject them (OpenRouter answers 400 otherwise).
-            self._tool_support[model_id] = supports_tools
-            models.append(
-                {
-                    "id": model_id,
-                    "name": entry.get("name") or model_id,
-                    "is_free": is_free,
-                    "supports_tools": supports_tools,
-                }
-            )
-        return models
+        return [
+            {
+                "id": entry.get("id", ""),
+                "name": entry.get("id", ""),
+                "is_free": False,
+                "supports_tools": True,
+            }
+            for entry in data
+        ]
+
+    # -- wire conversion ----------------------------------------------------
 
     def _build_payload(self, request: AICallRequest) -> dict:
         messages: list[dict] = []
@@ -176,8 +160,6 @@ class OpenRouterProvider:
                     }
                     for tc in m.tool_calls
                 ]
-                # An assistant turn that only made tool calls has no text;
-                # send null content rather than an empty string.
                 if not m.content:
                     msg["content"] = None
             if m.tool_call_id is not None:
@@ -191,7 +173,7 @@ class OpenRouterProvider:
             "stream": True,
             "stream_options": {"include_usage": True},
         }
-        if request.tools and self._tool_support.get(request.model, True):
+        if request.tools:
             payload["tools"] = [
                 {
                     "type": "function",

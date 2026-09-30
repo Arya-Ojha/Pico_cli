@@ -17,6 +17,7 @@ pico_ai ─► pico_core ─► pico_sdk ─► pico_tui
 - **Eight hardcoded core tools** — `read`, `write`, `edit`, `grep`, `fetch`, `websearch`, `bash`, and `todo` (see ADR-0003).
 - **Todo tracking** — the agent tracks multi-step work with a `todo` tool (add / update / list / clear); the TUI shows the in-memory list in a read-only side panel that appears once the first todo exists. A run only ends once every todo is completed — stopping early nudges the agent back in. When the run ends clean, the list is cleared for the next run (a run stopped by the stuck-model guard keeps its open todos).
 - **One-way LLM gateway** — all models reached through a single streaming OpenRouter client behind one unified "AI call" shape. Responses stream token-by-token.
+- **Six native providers** — OpenRouter, OpenAI, Anthropic, Gemini, DeepSeek, and local Ollama, each a one-file adapter (`pico_ai/providers/`) normalizing to the same event shape. Switch with `/provider` (picker + per-provider setup form for API key, URL, model) or `--provider` (see ADR-0004).
 - **Reasoning & usage** — thinking blocks are preserved in the transcript; token counts are tracked.
 - **Session tree** — sessions are persisted as append-only trees of nodes; you can resume, rewind, and fork branches.
 - **Auto-compaction** — context is summarised automatically at a token threshold, plus a manual override.
@@ -27,7 +28,7 @@ pico_ai ─► pico_core ─► pico_sdk ─► pico_tui
 
 | Package | Responsibility | ADR |
 |---|---|---|
-| `pico_ai` | LLM abstraction; unified "AI call" + OpenRouter client | ADR-0001 |
+| `pico_ai` | LLM abstraction; unified "AI call" + per-provider adapters | ADR-0001, ADR-0004 |
 | `pico_core` | The finite-state-machine agent loop + append-only session tree | ADR-0001, ADR-0002 |
 | `pico_sdk` | The headless `AgentSession` API + curated hooks/skills | ADR-0001, ADR-0003 |
 | `pico_tui` | The interactive terminal UI (Textual + Rich) | ADR-0001 |
@@ -38,7 +39,20 @@ Dependencies flow one way — `pico_ai` ← `pico_core` ← `pico_sdk` ← `pico
 
 - Python **3.12+**
 - [uv](https://docs.astral.sh/uv/) (workspace + dev tooling)
-- An [OpenRouter](https://openrouter.ai/) API key (the current provider gateway)
+- An API key for your provider (or a local Ollama server — no key needed)
+
+## Providers
+
+| Provider | Default env var | Notes |
+|---|---|---|
+| OpenRouter (default) | `OPENROUTER_API_KEY` | Many models through one gateway; `openrouter/free` auto-resolves |
+| OpenAI | `OPENAI_API_KEY` | GPT models |
+| Anthropic | `ANTHROPIC_API_KEY` | Claude models; model list is curated (`/model <id>` for newer ones) |
+| Gemini | `GOOGLE_API_KEY` | Google AI Studio |
+| DeepSeek | `DEEPSEEK_API_KEY` | Chat + reasoner (reasoning streams as thinking blocks) |
+| Ollama | — | Local server (`OLLAMA_HOST`, default `http://localhost:11434`) |
+
+In the TUI, `/provider` opens a picker with ✓/✗ setup status, then a setup form for that provider's API key, base URL, model, and extras. Only changed values are stored (in `settings.json` — prefer env vars on shared machines); blanks fall back to env/defaults. Effective precedence: field default < environment < stored value. Switching providers resets the model to that provider's stored/default model. Headless: `picoCLI run --provider ollama "..."`.
 
 ## Installation
 
@@ -99,6 +113,7 @@ Flags for `picoCLI run`:
 | Flag | Purpose |
 |---|---|
 | `--no-bash` | Disable unsandboxed bash execution (on by default; ignored when `allowed_tools` is set without `bash`) |
+| `--provider <id>` | Provider id (`openrouter`, `openai`, `anthropic`, `gemini`, `deepseek`, `ollama`) |
 | `--allow-tools <csv>` | Tool allowlist, e.g. `--allow-tools read,grep,bash` (overrides `settings.allowed_tools`) |
 | `--skills-dir <path>` | Override the configured skills directory |
 | `--no-skills` | Disable `SKILL.md` loading |
@@ -120,6 +135,7 @@ uv run picoCLI-chat
 | `/history` | `Ctrl+H` | Browse session nodes — pick one to jump to |
 | `/compact [text]` | `Ctrl+K` | Compact context (optionally with steering text) |
 | `/skills` | — | List loaded `SKILL.md` skills |
+| `/provider [id]` | — | Pick the LLM provider, then fill its setup form (key, URL, model) |
 | `/fork <n or id>` | — | Rewind to a node and start a new branch |
 | `/undo` | `Ctrl+Z` | Rewind to the previous user turn |
 | `/quit` | `Ctrl+Q` | Save the session and exit |
@@ -158,7 +174,14 @@ Sessions are persisted as JSONL under `~/.pico/sessions/<id>.jsonl` by default (
 uv run pytest
 
 # typecheck every package
-uv run mypy packages/pico_ai/src packages/pico_core/src packages/pico_sdk/src packages/pico_tui/src
+uv run mypy packages/pico_ai/src packages/pico_core/src packages/pico_sdk/src packages/pico_tui/src src/pico
+
+# build all wheels into dist/ (root `pico` is a meta-package: deps + entry points only)
+uv build --package pico --out-dir dist
+uv build --package pico-ai --out-dir dist
+uv build --package pico-core --out-dir dist
+uv build --package pico-sdk --out-dir dist
+uv build --package pico-tui --out-dir dist
 ```
 
 The test suite is network-free: it drives the whole agent loop through a scripted fake provider (`FakeProvider`) and a temporary filesystem, exercising `pico_ai`, `pico_core`, `pico_sdk`, and `pico_tui`.

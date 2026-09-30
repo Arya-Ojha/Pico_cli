@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import os
 import sys
-from pathlib import Path
 
 from pico_core.fsm import LoopEvent
 
 from .config import Settings, load_settings
-from .providers import FREE_MODEL_ALIAS, create_provider, resolve_free_model
+from .providers import (
+    FREE_MODEL_ALIAS,
+    create_provider,
+    missing_required,
+    resolve_free_model,
+)
 from .session import AgentSession
 
 
@@ -76,25 +79,31 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--no-skills", action="store_true", help="Disable SKILL.md loading."
     )
+    run.add_argument(
+        "--provider", default=None, help="Provider id (e.g. 'openai', 'ollama')."
+    )
     return parser
 
 
 async def run_command(args: argparse.Namespace) -> int:
     settings = load_settings()
+    if args.provider:
+        settings.provider = args.provider
     model = args.model or settings.model
     load_skills = apply_cli_overrides(args, settings)
-    api_key = os.environ.get(settings.api_key_env, "")
+    missing = missing_required(settings.provider, settings)
 
-    if not api_key:
+    if missing:
         sys.stderr.write(
-            f"error: {settings.api_key_env} is not set.\n"
-            f"Set it before running pico, e.g.:\n"
-            f'  $env:{settings.api_key_env} = "sk-or-v1-..."\n'
+            f"error: provider '{settings.provider}' is missing required "
+            f"config: {', '.join(missing)}.\n"
+            f"Run `picoCLI-chat` and use /provider to configure it, or set "
+            f"the corresponding environment variable.\n"
         )
         return 1
 
     provider = create_provider(settings)
-    if model == FREE_MODEL_ALIAS:
+    if model == FREE_MODEL_ALIAS and settings.provider == "openrouter":
         resolved = await resolve_free_model(provider)
         if resolved:
             model = resolved
