@@ -12,8 +12,8 @@ pico_ai ─► pico_core ─► pico_sdk ─► pico_tui
 
 ## Features
 
-- **Headless CLI** — `picoCLI run "do a task"` completes a coding task end-to-end with a single prompt.
-- **Interactive TUI** — `picoCLI-chat` is a full terminal UI (Textual + Rich) for back-and-forth sessions.
+- **Headless CLI** — `picocli-chat run "do a task"` completes a coding task end-to-end with a single prompt.
+- **Interactive TUI** — `picocli` is a full terminal UI (Textual + Rich) for back-and-forth sessions.
 - **Status bar** — the bottom bar always shows `provider | model`, a `thinking` indicator while streaming, and a color-coded context-window bar (`green < 70%`, `yellow < 90%`, `red ≥ 90%`) with the live token estimate.
 - **Nine hardcoded core tools** — `read`, `write`, `edit`, `grep`, `fetch`, `websearch`, `bash`, `todo`, and `task` (see ADR-0003, ADR-0005).
 - **Todo tracking** — the agent tracks multi-step work with a `todo` tool (add / update / list / clear); the TUI shows the in-memory list in a read-only side panel that appears once the first todo exists. A run only ends once every todo is completed — stopping early nudges the agent back in. When the run ends clean, the list is cleared for the next run (a run stopped by the stuck-model guard keeps its open todos).
@@ -55,9 +55,24 @@ Dependencies flow one way — `pico_ai` ← `pico_core` ← `pico_sdk` ← `pico
 | DeepSeek | `DEEPSEEK_API_KEY` | Chat + reasoner (reasoning streams as thinking blocks) |
 | Ollama | — | Local server (`OLLAMA_HOST`, default `http://localhost:11434`) |
 
-In the TUI, `/provider` opens a picker with ✓/✗ setup status, then a setup form for that provider's API key, base URL, model, and extras. Only changed values are stored (in `settings.json` — prefer env vars on shared machines); blanks fall back to env/defaults. Effective precedence: field default < environment < stored value. Switching providers resets the model to that provider's stored/default model. Headless: `picoCLI run --provider ollama "..."`.
+In the TUI, `/provider` opens a picker with ✓/✗ setup status, then a setup form for that provider's API key, base URL, model, and extras. Only changed values are stored (in `settings.json` — prefer env vars on shared machines); blanks fall back to env/defaults. Effective precedence: field default < environment < stored value. Switching providers resets the model to that provider's stored/default model. Headless: `picocli-chat run --provider ollama "..."`.
 
 ## Installation
+
+```bash
+# stable release from PyPI (puts `picocli` + `picocli-chat` on your PATH)
+pip install pico-cli
+
+# isolated install (same result, no venv needed)
+pipx install pico-cli
+
+# try without installing (npx-style)
+uvx pico-cli@latest --help
+```
+
+Requires Python **3.12+**. Verify with `picocli-chat run "explain what this repo does"`.
+
+### From source (contributors)
 
 ```bash
 uv sync
@@ -103,22 +118,22 @@ Create `~/.pico/settings.json` to override defaults:
 
 ```bash
 # complete a task in one shot
-uv run picoCLI run "explain what this repo does"
+uv run picocli-chat run "explain what this repo does"
 
 # let the agent run shell commands (bash is on by default)
-uv run picoCLI run "run the tests and fix failures"
+uv run picocli-chat run "run the tests and fix failures"
 
 # work in another directory, pick a model
-uv run picoCLI run "summarize this code" --cwd D:\some\repo --model openai/gpt-4o-mini
+uv run picocli-chat run "summarize this code" --cwd D:\some\repo --model openai/gpt-4o-mini
 
 # resume a previous session by id
-uv run picoCLI run "continue" --session <session-id>
+uv run picocli-chat run "continue" --session <session-id>
 
 # compact a session headlessly (with optional steering text)
-uv run picoCLI run "/compact focus on the auth refactor"
+uv run picocli-chat run "/compact focus on the auth refactor"
 ```
 
-Flags for `picoCLI run`:
+Flags for `picocli-chat run`:
 
 | Flag | Purpose |
 |---|---|
@@ -134,10 +149,10 @@ Flags for `picoCLI run`:
 ### Interactive TUI
 
 ```bash
-uv run picoCLI-chat
+uv run picocli
 ```
 
-`picoCLI-chat` shares the same flags. Inside the prompt you can type a message or use:
+`picocli` shares the same flags. Inside the prompt you can type a message or use:
 
 | Slash command | Key | Action |
 |---|---|---|
@@ -177,7 +192,7 @@ Permission gating via `allowed_tools` in `settings.json` (`null` = all tools, `[
 
 ## Where sessions live
 
-Sessions are persisted as JSONL under `~/.pico/sessions/<id>.jsonl` by default (configurable via `session_dir`). Both `picoCLI run` and `picoCLI-chat` accept `--session <id>` to resume; `/history`, `/fork`, and `/undo` rewind within the tree without deleting nodes.
+Sessions are persisted as JSONL under `~/.pico/sessions/<id>.jsonl` by default (configurable via `session_dir`). Both `picocli-chat run` and `picocli` accept `--session <id>` to resume; `/history`, `/fork`, and `/undo` rewind within the tree without deleting nodes.
 
 ## Development
 
@@ -190,10 +205,10 @@ uv run mypy packages/pico_ai/src packages/pico_core/src packages/pico_sdk/src pa
 
 # build all wheels into dist/ (root `pico-cli` is a meta-package: deps + entry points only)
 uv build --package pico-cli --out-dir dist
-uv build --package pico-ai --out-dir dist
-uv build --package pico-core --out-dir dist
+uv build --package pico-cli-ai --out-dir dist
+uv build --package pico-cli-core --out-dir dist
 uv build --package pico-cli-sdk --out-dir dist
-uv build --package pico-tui --out-dir dist
+uv build --package pico-cli-tui --out-dir dist
 ```
 
 The test suite is network-free: it drives the whole agent loop through a scripted fake provider (`FakeProvider`) and a temporary filesystem, exercising `pico_ai`, `pico_core`, `pico_sdk`, and `pico_tui`.

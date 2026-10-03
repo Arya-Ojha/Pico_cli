@@ -53,7 +53,7 @@ def apply_cli_overrides(args: argparse.Namespace, settings: Settings) -> bool:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="picoCLI", description="A headless coding agent.")
+    parser = argparse.ArgumentParser(prog="picocli-chat", description="A headless coding agent.")
     sub = parser.add_subparsers(dest="command", required=True)
 
     run = sub.add_parser("run", help="Run the agent on a prompt.")
@@ -97,7 +97,7 @@ async def run_command(args: argparse.Namespace) -> int:
         sys.stderr.write(
             f"error: provider '{settings.provider}' is missing required "
             f"config: {', '.join(missing)}.\n"
-            f"Run `picoCLI-chat` and use /provider to configure it, or set "
+             f"Run `picocli` and use /provider to configure it, or set "
             f"the corresponding environment variable.\n"
         )
         return 1

@@ -8,11 +8,11 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "pico-ai",
     "pico-cli",
+    "pico-cli-ai",
+    "pico-cli-core",
     "pico-cli-sdk",
-    "pico-core",
-    "pico-tui",
+    "pico-cli-tui",
 ]
 
 [[package]]
@@ -407,8 +407,37 @@ wheels = [
 ]
 
 [[package]]
-name = "pico-ai"
-version = "0.1.0"
+name = "pico-cli"
+version = "0.1.1"
+source = { editable = "." }
+dependencies = [
+    { name = "pico-cli-sdk" },
+    { name = "pico-cli-tui" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pico-cli-sdk", editable = "packages/pico_sdk" },
+    { name = "pico-cli-tui", editable = "packages/pico_tui" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = ">=2.3.1" },
+    { name = "pytest", specifier = ">=9.1.1" },
+    { name = "pytest-asyncio", specifier = ">=1.4.0" },
+]
+
+[[package]]
+name = "pico-cli-ai"
+version = "0.1.1"
 source = { editable = "packages/pico_ai" }
 dependencies = [
     { name = "httpx" },
@@ -422,71 +451,42 @@ requires-dist = [
 ]
 
 [[package]]
-name = "pico-cli"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "pico-cli-sdk" },
-    { name = "pico-tui" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pico-cli-sdk", editable = "packages/pico_sdk" },
-    { name = "pico-tui", editable = "packages/pico_tui" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "mypy", specifier = ">=2.3.1" },
-    { name = "pytest", specifier = ">=9.1.1" },
-    { name = "pytest-asyncio", specifier = ">=1.4.0" },
-]
-
-[[package]]
-name = "pico-cli-sdk"
-version = "0.1.0"
-source = { editable = "packages/pico_sdk" }
-dependencies = [
-    { name = "pico-ai" },
-    { name = "pico-core" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pico-ai", editable = "packages/pico_ai" },
-    { name = "pico-core", editable = "packages/pico_core" },
-    { name = "pydantic", specifier = ">=2" },
-]
-
-[[package]]
-name = "pico-core"
-version = "0.1.0"
+name = "pico-cli-core"
+version = "0.1.1"
 source = { editable = "packages/pico_core" }
 dependencies = [
     { name = "httpx" },
-    { name = "pico-ai" },
+    { name = "pico-cli-ai" },
     { name = "pydantic" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.27" },
-    { name = "pico-ai", editable = "packages/pico_ai" },
+    { name = "pico-cli-ai", editable = "packages/pico_ai" },
     { name = "pydantic", specifier = ">=2" },
 ]
 
 [[package]]
-name = "pico-tui"
-version = "0.1.0"
+name = "pico-cli-sdk"
+version = "0.1.1"
+source = { editable = "packages/pico_sdk" }
+dependencies = [
+    { name = "pico-cli-ai" },
+    { name = "pico-cli-core" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pico-cli-ai", editable = "packages/pico_ai" },
+    { name = "pico-cli-core", editable = "packages/pico_core" },
+    { name = "pydantic", specifier = ">=2" },
+]
+
+[[package]]
+name = "pico-cli-tui"
+version = "0.1.1"
 source = { editable = "packages/pico_tui" }
 dependencies = [
     { name = "pico-cli-sdk" },

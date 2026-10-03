@@ -1,6 +1,6 @@
 [project]
 name = "pico-cli"
-version = "0.1.0"
+version = "0.1.1"
 description = "A Python CLI coding agent — autonomous, tool-using, and session-persistent."
 readme = "README.md"
 license = "MIT"
@@ -18,7 +18,7 @@ classifiers = [
     "Topic :: Utilities",
 ]
 requires-python = ">=3.12"
-dependencies = ["pico-cli-sdk", "pico-tui"]
+dependencies = ["pico-cli-sdk", "pico-cli-tui"]
 
 [project.urls]
 Homepage = "https://github.com/Arya-Ojha/PicoCLI_Learn"
@@ -26,8 +26,8 @@ Repository = "https://github.com/Arya-Ojha/PicoCLI_Learn"
 Issues = "https://github.com/Arya-Ojha/PicoCLI_Learn/issues"
 
 [project.scripts]
-picoCLI = "pico_sdk.cli:main"
-picoCLI-chat = "pico_tui.app:main"
+picocli-chat = "pico_sdk.cli:main"
+picocli = "pico_tui.app:main"
 
 # The root `pico` dist is a meta-package: the implementation lives in the
 # workspace members, so the wheel ships the stub above plus metadata
@@ -44,7 +44,7 @@ members = ["packages/*"]
 
 [tool.uv.sources]
 pico-cli-sdk = { workspace = true }
-pico-tui = { workspace = true }
+pico-cli-tui = { workspace = true }
 
 [dependency-groups]
 dev = [

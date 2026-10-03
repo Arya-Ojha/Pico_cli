@@ -1,6 +1,6 @@
 [project]
-name = "pico-tui"
-version = "0.1.0"
+name = "pico-cli-tui"
+version = "0.1.1"
 description = "Terminal user interface view."
 readme = "README.md"
 license = "MIT"
@@ -27,7 +27,7 @@ Homepage = "https://github.com/Arya-Ojha/PicoCLI_Learn"
 Repository = "https://github.com/Arya-Ojha/PicoCLI_Learn"
 Issues = "https://github.com/Arya-Ojha/PicoCLI_Learn/issues"
 
-# Note: the `picoCLI-chat` entry point lives on the `pico-cli`
+# Note: the `picocli` entry point lives on the `pico-cli`
 # meta-package only, so installing the stack never ships duplicate
 # console scripts.
 [build-system]

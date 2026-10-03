@@ -1,4 +1,4 @@
-# pico-ai
+# pico-cli-ai
 
 LLM abstraction and protocol normalisation for `pico-cli`: one unified streaming "AI call" shape plus per-provider adapters (OpenRouter, OpenAI, Anthropic, Gemini, DeepSeek, local Ollama).
 

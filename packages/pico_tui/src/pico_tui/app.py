@@ -878,7 +878,7 @@ class PicoApp(App[None]):
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="picoCLI-chat", description="Interactive pico session (Textual TUI)."
+        prog="picocli", description="Interactive pico session (Textual TUI)."
     )
     parser.add_argument(
         "--no-bash",

@@ -1,6 +1,6 @@
 [project]
-name = "pico-core"
-version = "0.1.0"
+name = "pico-cli-core"
+version = "0.1.1"
 description = "Agent loop and session tree."
 readme = "README.md"
 license = "MIT"
@@ -15,7 +15,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 requires-python = ">=3.12"
-dependencies = ["pico-ai", "pydantic>=2", "httpx>=0.27"]
+dependencies = ["pico-cli-ai", "pydantic>=2", "httpx>=0.27"]
 
 [project.urls]
 Homepage = "https://github.com/Arya-Ojha/PicoCLI_Learn"
@@ -30,4 +30,4 @@ build-backend = "hatchling.build"
 packages = ["src/pico_core"]
 
 [tool.uv.sources]
-pico-ai = { workspace = true }
+pico-cli-ai = { workspace = true }

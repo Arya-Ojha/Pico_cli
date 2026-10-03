@@ -1,6 +1,6 @@
 [project]
-name = "pico-ai"
-version = "0.1.0"
+name = "pico-cli-ai"
+version = "0.1.1"
 description = "LLM abstraction and protocol normalisation."
 readme = "README.md"
 license = "MIT"

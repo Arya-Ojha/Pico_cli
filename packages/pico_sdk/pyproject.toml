@@ -1,6 +1,6 @@
 [project]
 name = "pico-cli-sdk"
-version = "0.1.0"
+version = "0.1.1"
 description = "Headless library API and extension/plugin binding."
 readme = "README.md"
 license = "MIT"
@@ -16,14 +16,14 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 requires-python = ">=3.12"
-dependencies = ["pico-core", "pico-ai", "pydantic>=2"]
+dependencies = ["pico-cli-core", "pico-cli-ai", "pydantic>=2"]
 
 [project.urls]
 Homepage = "https://github.com/Arya-Ojha/PicoCLI_Learn"
 Repository = "https://github.com/Arya-Ojha/PicoCLI_Learn"
 Issues = "https://github.com/Arya-Ojha/PicoCLI_Learn/issues"
 
-# Note: the `picoCLI` entry point lives on the `pico-cli` meta-package only,
+# Note: the `picocli-chat` entry point lives on the `pico-cli` meta-package only,
 # so installing the stack never ships duplicate console scripts.
 [build-system]
 requires = ["hatchling"]
@@ -33,5 +33,5 @@ build-backend = "hatchling.build"
 packages = ["src/pico_sdk"]
 
 [tool.uv.sources]
-pico-core = { workspace = true }
-pico-ai = { workspace = true }
+pico-cli-core = { workspace = true }
+pico-cli-ai = { workspace = true }
