@@ -1,8 +1,8 @@
 """Full-screen trace view overlay (ADR-0006, ticket 03).
 
 One row per session node on the active branch (snapshot on open — not
-live). Typing filters by summary text (``is:error`` shows only error rows);
-``r`` re-snapshots, ``e`` toggles errors-only, ``Enter``/``Esc`` dismisses.
+live). Typing filters by summary text; ``r`` re-snapshots, ``e`` toggles
+errors-only, ``Enter``/``Esc`` dismisses.
 
 ``r``/``e`` are screen bindings, so they fire while the row list (not the
 filter bar) is focused — printable keys typed in the filter bar always go
@@ -14,12 +14,27 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from rich.markup import escape
+from rich.text import Text
+from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.widgets import Input
+from textual.containers import Vertical
+from textual.widgets import Footer, Input, Label, OptionList
 
 from pico_sdk import TraceRow
 
 from .modal import MAX_ROW_WIDTH, PickerScreen, fit_text, picker_css
+
+#: Fixed column widths (measured on plain text, so markup never shifts
+#: alignment). Layout: TIME KIND STATUS TOKENS DURATION SUMMARY, separated
+#: by two spaces; the summary (last) absorbs all truncation.
+TIME_W = 8
+KIND_W = 12
+STATUS_W = 14
+TOKENS_W = 8
+DURATION_W = 7
+_SEP = "  "
+#: Plain-text length of the fixed columns + separators (summary starts here).
+PREFIX_LEN = TIME_W + KIND_W + STATUS_W + TOKENS_W + DURATION_W + len(_SEP) * 5
 
 
 def trace_entry(row: TraceRow) -> dict:
@@ -36,25 +51,71 @@ def trace_entry(row: TraceRow) -> dict:
     }
 
 
-def format_trace_option(row: TraceRow) -> str:
-    """Render one fixed-width row; the summary (last) absorbs truncation."""
-    tokens = f"{row.tokens:,}" if row.tokens is not None else "—"
-    if row.duration_ms is None:
-        duration = "—"
-    elif row.duration_ms >= 1000:
-        duration = f"{row.duration_ms / 1000:.1f}s"
+def _tokens_text(tokens: int | None) -> str:
+    """Right-aligned token cell (blank when unknown)."""
+    text = f"{tokens:,}" if tokens is not None else "—"
+    return f"{fit_text(text, TOKENS_W):>{TOKENS_W}}"
+
+
+def _duration_text(duration_ms: float | None) -> str:
+    """Right-aligned duration cell (blank when unknown)."""
+    if duration_ms is None:
+        text = "—"
+    elif duration_ms >= 1000:
+        text = f"{duration_ms / 1000:.1f}s"
     else:
-        duration = f"{row.duration_ms:.0f}ms"
-    status = (
-        f"[red]{row.status}[/]"
-        if row.status.startswith("error")
-        else f"[green]{row.status}[/]"
-    )
-    prefix = f"{row.time}  {row.kind:<12}  {row.status}  {tokens}  {duration}  "
-    summary = fit_text(row.summary, max(MAX_ROW_WIDTH - len(prefix), 8))
+        text = f"{duration_ms:.0f}ms"
+    return f"{fit_text(text, DURATION_W):>{DURATION_W}}"
+
+
+def _row_prefix(
+    time_text: str, kind_text: str, status_text: str, tokens_text: str, duration_text: str
+) -> str:
+    """Assemble the fixed-width columns (length is always ``PREFIX_LEN``)."""
     return (
-        f"{row.time}  [dim]{row.kind:<12}[/]  {status}  {tokens}  "
-        f"{duration}  {escape(summary)}"
+        f"{fit_text(time_text, TIME_W):<{TIME_W}}{_SEP}"
+        f"{fit_text(kind_text, KIND_W):<{KIND_W}}{_SEP}"
+        f"{fit_text(status_text, STATUS_W):<{STATUS_W}}{_SEP}"
+        f"{tokens_text}{_SEP}"
+        f"{duration_text}{_SEP}"
+    )
+
+
+def format_trace_header() -> str:
+    """The header line, aligned with :func:`format_trace_option` rows."""
+    return (
+        _row_prefix("TIME", "KIND", "STATUS", f"{'TOKENS':>{TOKENS_W}}", f"{'DUR':>{DURATION_W}}")
+        + "SUMMARY"
+    )
+
+
+def format_trace_option(row: TraceRow) -> str:
+    """Render one fixed-width row; the summary (last) absorbs truncation.
+
+    Color markup wraps already-padded cells, so it never shifts alignment;
+    the summary is markup-escaped (tool output contains ``[...]``).
+    """
+    status_plain = f"{fit_text(row.status, STATUS_W):<{STATUS_W}}"
+    status = (
+        f"[red]{status_plain}[/]"
+        if row.status.startswith("error")
+        else f"[green]{status_plain}[/]"
+    )
+    prefix = _row_prefix(
+        row.time, row.kind, row.status, _tokens_text(row.tokens),
+        _duration_text(row.duration_ms),
+    )
+    summary = fit_text(row.summary, max(MAX_ROW_WIDTH - len(prefix), 8))
+    kind = f"{fit_text(row.kind, KIND_W):<{KIND_W}}"
+    tokens = _tokens_text(row.tokens)
+    duration = _duration_text(row.duration_ms)
+    return (
+        f"{fit_text(row.time, TIME_W):<{TIME_W}}{_SEP}"
+        f"[dim]{kind}[/]{_SEP}"
+        f"{status}{_SEP}"
+        f"{tokens}{_SEP}"
+        f"{duration}{_SEP}"
+        f"{escape(summary)}"
     )
 
 
@@ -81,6 +142,21 @@ class TraceViewScreen(PickerScreen[None]):
     list_id = "trace-list"
     search_id = "trace-search"
     search_placeholder = "Type to filter... (Tab to list, e = errors only)"
+
+    def compose(self) -> ComposeResult:
+        """Base picker layout plus a fixed column header above the rows."""
+        with Vertical(id=self.dialog_id):
+            yield Input(placeholder=self.search_placeholder, id=self.search_id)
+            yield Label(
+                Text(format_trace_header(), style="bold", no_wrap=True),
+                id="trace-header",
+            )
+            option_list = OptionList(id=self.list_id)
+            for row in self.options():
+                option_list.add_option(row)
+            option_list.highlighted = self.initial_highlight
+            yield option_list
+        yield Footer()
 
     def __init__(
         self,
