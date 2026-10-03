@@ -2,8 +2,25 @@
 name = "pico-ai"
 version = "0.1.0"
 description = "LLM abstraction and protocol normalisation."
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Arya-Ojha", email = "aryaojha195@gmail.com" }]
+keywords = ["llm", "ai-agent", "openrouter", "openai", "anthropic"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
 requires-python = ">=3.12"
 dependencies = ["pydantic>=2", "httpx>=0.27"]
+
+[project.urls]
+Homepage = "https://github.com/Arya-Ojha/PicoCLI_Learn"
+Repository = "https://github.com/Arya-Ojha/PicoCLI_Learn"
+Issues = "https://github.com/Arya-Ojha/PicoCLI_Learn/issues"
 
 [build-system]
 requires = ["hatchling"]

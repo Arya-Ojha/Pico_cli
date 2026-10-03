@@ -188,11 +188,11 @@ uv run pytest
 # typecheck every package
 uv run mypy packages/pico_ai/src packages/pico_core/src packages/pico_sdk/src packages/pico_tui/src src/pico
 
-# build all wheels into dist/ (root `pico` is a meta-package: deps + entry points only)
-uv build --package pico --out-dir dist
+# build all wheels into dist/ (root `pico-cli` is a meta-package: deps + entry points only)
+uv build --package pico-cli --out-dir dist
 uv build --package pico-ai --out-dir dist
 uv build --package pico-core --out-dir dist
-uv build --package pico-sdk --out-dir dist
+uv build --package pico-cli-sdk --out-dir dist
 uv build --package pico-tui --out-dir dist
 ```
 

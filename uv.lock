@@ -8,10 +8,10 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "pico",
     "pico-ai",
+    "pico-cli",
+    "pico-cli-sdk",
     "pico-core",
-    "pico-sdk",
     "pico-tui",
 ]
 
@@ -407,11 +407,26 @@ wheels = [
 ]
 
 [[package]]
-name = "pico"
+name = "pico-ai"
+version = "0.1.0"
+source = { editable = "packages/pico_ai" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "pydantic", specifier = ">=2" },
+]
+
+[[package]]
+name = "pico-cli"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "pico-sdk" },
+    { name = "pico-cli-sdk" },
     { name = "pico-tui" },
 ]
 
@@ -424,7 +439,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "pico-sdk", editable = "packages/pico_sdk" },
+    { name = "pico-cli-sdk", editable = "packages/pico_sdk" },
     { name = "pico-tui", editable = "packages/pico_tui" },
 ]
 
@@ -436,17 +451,19 @@ dev = [
 ]
 
 [[package]]
-name = "pico-ai"
+name = "pico-cli-sdk"
 version = "0.1.0"
-source = { editable = "packages/pico_ai" }
+source = { editable = "packages/pico_sdk" }
 dependencies = [
-    { name = "httpx" },
+    { name = "pico-ai" },
+    { name = "pico-core" },
     { name = "pydantic" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "httpx", specifier = ">=0.27" },
+    { name = "pico-ai", editable = "packages/pico_ai" },
+    { name = "pico-core", editable = "packages/pico_core" },
     { name = "pydantic", specifier = ">=2" },
 ]
 
@@ -468,35 +485,18 @@ requires-dist = [
 ]
 
 [[package]]
-name = "pico-sdk"
-version = "0.1.0"
-source = { editable = "packages/pico_sdk" }
-dependencies = [
-    { name = "pico-ai" },
-    { name = "pico-core" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pico-ai", editable = "packages/pico_ai" },
-    { name = "pico-core", editable = "packages/pico_core" },
-    { name = "pydantic", specifier = ">=2" },
-]
-
-[[package]]
 name = "pico-tui"
 version = "0.1.0"
 source = { editable = "packages/pico_tui" }
 dependencies = [
-    { name = "pico-sdk" },
+    { name = "pico-cli-sdk" },
     { name = "rich" },
     { name = "textual" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "pico-sdk", editable = "packages/pico_sdk" },
+    { name = "pico-cli-sdk", editable = "packages/pico_sdk" },
     { name = "rich", specifier = ">=15.0.0" },
     { name = "textual", specifier = ">=8.2.8" },
 ]
