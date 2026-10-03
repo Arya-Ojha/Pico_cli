@@ -50,6 +50,9 @@ class AssistantPayload(BaseModel):
     kind: Literal["assistant"] = "assistant"
     blocks: list[AssistantBlock] = Field(default_factory=list)
     usage: Usage | None = None
+    #: Provider-stream wall-time in milliseconds (None = unknown, e.g.
+    #: sessions persisted before trace timing existed).
+    duration_ms: float | None = None
 
     @property
     def text(self) -> str:

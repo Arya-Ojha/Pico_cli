@@ -54,6 +54,26 @@ def test_fork_unknown_node_raises():
     raise AssertionError("expected KeyError")
 
 
+def test_session_without_duration_loads_as_unknown(tmp_path):
+    import json
+
+    session = Session()
+    root = session.append(None, UserPayload(content="hi"))
+    session.append(root.id, _assistant("hello"))
+    # Simulate a pre-duration file: drop the field entirely.
+    lines = []
+    for line in session.to_jsonl().splitlines():
+        data = json.loads(line)
+        if "payload" in data:
+            data["payload"].pop("duration_ms", None)
+        lines.append(json.dumps(data))
+    path = tmp_path / "old.jsonl"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    loaded = Session.load(path)
+    assistants = [n.payload for n in loaded.active_branch() if isinstance(n.payload, AssistantPayload)]
+    assert assistants[0].duration_ms is None
+
+
 def test_save_load_round_trip(tmp_path):
     session = Session()
     root = session.append(None, UserPayload(content="hi"))

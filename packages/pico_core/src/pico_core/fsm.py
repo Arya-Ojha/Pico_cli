@@ -13,6 +13,7 @@ Yolo mode means there is no approval/confirmation state.
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import AsyncIterator, Callable
 from enum import Enum
 from typing import Literal, Protocol
@@ -192,23 +193,30 @@ class AgentLoop:
             tool_calls: list[ToolCall] = []
             usage: Usage | None = None
 
-            async for stream_event in self.provider.stream(request):
-                if stream_event.kind == "text":
-                    blocks.append(AssistantBlock(kind="text", text=stream_event.text))
-                    yield LoopEvent(kind="text", text=stream_event.text)
-                elif stream_event.kind == "thinking":
-                    blocks.append(AssistantBlock(kind="thinking", thinking=stream_event.thinking))
-                    yield LoopEvent(kind="thinking", thinking=stream_event.thinking)
-                elif stream_event.kind == "tool_call" and stream_event.tool_call is not None:
-                    tool_calls.append(stream_event.tool_call)
-                    yield LoopEvent(kind="tool_call", tool_call=stream_event.tool_call)
-                elif stream_event.kind == "usage" and stream_event.usage is not None:
-                    usage = stream_event.usage
-
-            self.session.append(
-                self.session.active_leaf_id,
-                AssistantPayload(blocks=blocks, usage=usage),
-            )
+            # Trace timing (ADR-0006): the assistant node carries the
+            # provider-stream wall-time. The finally-append also covers
+            # interrupted streams (partial blocks + measured duration);
+            # the exception still propagates to the caller.
+            stream_start = time.perf_counter()
+            try:
+                async for stream_event in self.provider.stream(request):
+                    if stream_event.kind == "text":
+                        blocks.append(AssistantBlock(kind="text", text=stream_event.text))
+                        yield LoopEvent(kind="text", text=stream_event.text)
+                    elif stream_event.kind == "thinking":
+                        blocks.append(AssistantBlock(kind="thinking", thinking=stream_event.thinking))
+                        yield LoopEvent(kind="thinking", thinking=stream_event.thinking)
+                    elif stream_event.kind == "tool_call" and stream_event.tool_call is not None:
+                        tool_calls.append(stream_event.tool_call)
+                        yield LoopEvent(kind="tool_call", tool_call=stream_event.tool_call)
+                    elif stream_event.kind == "usage" and stream_event.usage is not None:
+                        usage = stream_event.usage
+            finally:
+                stream_ms = (time.perf_counter() - stream_start) * 1000.0
+                self.session.append(
+                    self.session.active_leaf_id,
+                    AssistantPayload(blocks=blocks, usage=usage, duration_ms=stream_ms),
+                )
             if usage is not None:
                 yield LoopEvent(kind="usage", usage=usage)
 

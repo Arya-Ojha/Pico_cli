@@ -1,5 +1,7 @@
 """Tickets 02/03/05 — the FSM loop: tracer bullet, tool loop, compaction."""
 
+import pytest
+
 from pico_ai.types import StreamEvent, ToolCall
 from pico_core.fsm import AgentLoop, AgentState
 from pico_core.session import (
@@ -36,6 +38,56 @@ async def test_tracer_bullet_text_response():
     assert [type(n.payload) for n in branch] == [UserPayload, AssistantPayload]
     assert branch[0].payload.content == "hello"
     assert branch[1].payload.text == "Hello"
+
+
+async def test_assistant_node_carries_stream_duration():
+    provider = FakeProvider([[StreamEvent(kind="text", text="Hello")]])
+    session = Session()
+    loop = AgentLoop(provider, session, ToolRegistry())
+    await loop.run("hello")
+    assistants = [n.payload for n in session.active_branch() if isinstance(n.payload, AssistantPayload)]
+    assert len(assistants) == 1
+    assert assistants[0].duration_ms is not None
+    assert assistants[0].duration_ms >= 0
+
+
+async def test_assistant_nodes_on_tool_turns_carry_duration(tmp_path):
+    (tmp_path / "a.txt").write_text("hello", encoding="utf-8")
+    provider = FakeProvider(
+        [
+            [StreamEvent(kind="tool_call", tool_call=ToolCall(id="c1", name="read", arguments={"path": "a.txt"}))],
+            [StreamEvent(kind="text", text="done")],
+        ]
+    )
+    session = Session()
+    loop = AgentLoop(provider, session, _registry(tmp_path))
+    await loop.run("read a.txt")
+    assistants = [n.payload for n in session.active_branch() if isinstance(n.payload, AssistantPayload)]
+    assert len(assistants) == 2
+    for payload in assistants:
+        assert payload.duration_ms is not None
+        assert payload.duration_ms >= 0
+
+
+async def test_interrupted_stream_appends_partial_duration():
+    async def _failing_stream(request):
+        yield StreamEvent(kind="text", text="partial")
+        raise RuntimeError("boom")
+
+    class FailingProvider:
+        async def stream(self, request):
+            async for event in _failing_stream(request):
+                yield event
+
+    session = Session()
+    loop = AgentLoop(FailingProvider(), session, ToolRegistry())
+    with pytest.raises(RuntimeError, match="boom"):
+        [e async for e in loop.stream("hi")]
+    assistants = [n.payload for n in session.active_branch() if isinstance(n.payload, AssistantPayload)]
+    assert len(assistants) == 1
+    assert assistants[0].text == "partial"
+    assert assistants[0].duration_ms is not None
+    assert assistants[0].duration_ms >= 0
 
 
 async def test_fsm_transitions_tracer_bullet():
