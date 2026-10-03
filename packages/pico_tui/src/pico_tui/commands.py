@@ -9,7 +9,7 @@ from dataclasses import dataclass
 class Command:
     """A slash command parsed from a line of input."""
 
-    kind: str  # "compact" | "fork" | "help" | "history" | "model" | "provider" | "skills" | "undo" | "quit"
+    kind: str  # "compact" | "fork" | "help" | "history" | "model" | "provider" | "skills" | "trace" | "undo" | "quit"
     arg: str = ""
 
 
@@ -33,6 +33,8 @@ def parse_line(line: str) -> Command | Prompt:
         return Command("history")
     if line in ("/skills", "/skill"):
         return Command("skills")
+    if line in ("/trace", "/traces"):
+        return Command("trace")
     if line in ("/undo", "/back"):
         return Command("undo")
     if line.startswith("/compact"):

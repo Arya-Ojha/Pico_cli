@@ -28,6 +28,7 @@ from pico_sdk import (
     ToolRequestPayload,
     ToolResultPayload,
     UserPayload,
+    assemble_trace_rows,
 )
 from pico_sdk.cli import apply_cli_overrides
 from pico_sdk.config import load_settings, save_settings
@@ -48,6 +49,7 @@ from .model_picker import ModelPickerScreen
 from .provider_form import ProviderFormScreen
 from .provider_picker import ProviderPickerScreen
 from .skill_picker import SkillPickerScreen
+from .trace_view import TraceViewScreen
 from .render import _truncate, render_event
 from .status_bar import ContextStatusBar
 from .todo_panel import TodoPanel
@@ -62,7 +64,8 @@ HELP_TEXT = """\
   [cyan]/provider [id][/] select the LLM provider — opens a picker, then a
                           setup form for its API key, URL, and other options
                           (/provider <id> jumps straight to that form)
-  [cyan]/skills[/]         pick a skill — inserts it into the input bar
+   [cyan]/skills[/]         pick a skill — inserts it into the input bar
+   [cyan]/trace, Ctrl+T[/]   trace view — every node with time, status, tokens, duration
   [cyan]/fork <n|id>[/]     rewind to a node and start a new branch
   [cyan]/undo, Ctrl+Z[/]    rewind to the previous user turn
   [cyan]/quit, Ctrl+Q[/]    save and exit
@@ -304,6 +307,10 @@ class _SessionManager:
             for skill in self.session.skills
         ]
 
+    def trace_rows(self) -> list:
+        """Return trace rows for the active branch (snapshot for the overlay)."""
+        return assemble_trace_rows(self.session.session.active_branch())
+
 
 
 class PicoApp(App[None]):
@@ -346,6 +353,7 @@ class PicoApp(App[None]):
         ("ctrl+h", "show_history", "History"),
         ("ctrl+z", "undo", "Undo"),
         ("ctrl+k", "compact", "Compact"),
+        ("ctrl+t", "show_trace", "Trace"),
         ("f1", "show_help", "Help"),
     ]
 
@@ -473,6 +481,8 @@ class PicoApp(App[None]):
             self._write_chat(Text(msg, style="dim"))
         elif cmd.kind == "skills":
             await self._show_skill_picker()
+        elif cmd.kind == "trace":
+            self._show_trace()
         elif cmd.kind == "provider":
             if cmd.arg:
                 if cmd.arg in provider_ids():
@@ -523,6 +533,14 @@ class PicoApp(App[None]):
             input_widget.focus()
 
         self.push_screen(SkillPickerScreen(entries), callback=_on_selected)
+
+    # -- trace view --
+
+    def _show_trace(self) -> None:
+        """Show the trace view overlay (snapshot; read-only, no fork)."""
+        self.push_screen(
+            TraceViewScreen(self._mgr.trace_rows(), on_refresh=self._mgr.trace_rows)
+        )
 
     # -- model picker --
 
@@ -841,6 +859,9 @@ class PicoApp(App[None]):
 
     async def action_show_history(self) -> None:
         await self._dispatch_command(Command("history"))
+
+    async def action_show_trace(self) -> None:
+        await self._dispatch_command(Command("trace"))
 
     async def action_undo(self) -> None:
         await self._dispatch_command(Command("undo"))

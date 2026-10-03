@@ -11,6 +11,7 @@ from pico_core.session import (
     UserPayload,
 )
 from pico_core.subagents import ChildSpec, SpawnTool
+from pico_core.trace import TraceRow, assemble_trace_rows
 
 from .config import Settings, load_settings
 from .extensions import ALLOWED_HOOKS, ExtensionManager
@@ -31,6 +32,8 @@ __all__ = [
     "DEFAULT_SYSTEM_PROMPT",
     "ChildSpec",
     "SpawnTool",
+    "TraceRow",
+    "assemble_trace_rows",
     "AgentState",
     "LoopEvent",
     "RunResult",
