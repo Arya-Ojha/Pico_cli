@@ -19,6 +19,7 @@ from .subagents import (
     SpawnTool,
 )
 from .todos import TodoItem, TodoList, TodoTool, format_todos
+from .trace import TraceRow, assemble_trace_rows
 from .tools import (
     BashTool,
     EditTool,
@@ -64,5 +65,7 @@ __all__ = [
     "TodoList",
     "TodoTool",
     "format_todos",
+    "TraceRow",
+    "assemble_trace_rows",
 ]
 
