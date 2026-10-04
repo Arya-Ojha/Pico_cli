@@ -1,6 +1,6 @@
 [project]
 name = "pico-cli-core"
-version = "0.1.1"
+version = "0.1.2"
 description = "Agent loop and session tree."
 readme = "README.md"
 license = "MIT"

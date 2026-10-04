@@ -1,6 +1,6 @@
 [project]
 name = "pico-cli-sdk"
-version = "0.1.1"
+version = "0.1.2"
 description = "Headless library API and extension/plugin binding."
 readme = "README.md"
 license = "MIT"

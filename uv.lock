@@ -408,7 +408,7 @@ wheels = [
 
 [[package]]
 name = "pico-cli"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "pico-cli-sdk" },
@@ -437,7 +437,7 @@ dev = [
 
 [[package]]
 name = "pico-cli-ai"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "packages/pico_ai" }
 dependencies = [
     { name = "httpx" },
@@ -452,7 +452,7 @@ requires-dist = [
 
 [[package]]
 name = "pico-cli-core"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "packages/pico_core" }
 dependencies = [
     { name = "httpx" },
@@ -469,7 +469,7 @@ requires-dist = [
 
 [[package]]
 name = "pico-cli-sdk"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "packages/pico_sdk" }
 dependencies = [
     { name = "pico-cli-ai" },
@@ -486,7 +486,7 @@ requires-dist = [
 
 [[package]]
 name = "pico-cli-tui"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "packages/pico_tui" }
 dependencies = [
     { name = "pico-cli-sdk" },
