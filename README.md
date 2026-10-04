@@ -59,18 +59,36 @@ In the TUI, `/provider` opens a picker with ✓/✗ setup status, then a setup f
 
 ## Installation
 
-```bash
-# stable release from PyPI (puts `picocli` + `picocli-chat` on your PATH)
-pip install pico-cli
+Requires Python **3.12+**.
 
-# isolated install (same result, no venv needed)
+```bash
+# recommended: isolated install — `picocli` + `picocli-chat` work in any
+# directory, like `npm i -g`
 pipx install pico-cli
 
+# ... or via uv (same result)
+uv tool install pico-cli
+
+# plain pip also works (see the Windows PATH note below)
+pip install pico-cli
+
 # try without installing (npx-style)
-uvx pico-cli@latest --help
+uvx pico-cli --help
 ```
 
-Requires Python **3.12+**. Verify with `picocli-chat run "explain what this repo does"`.
+Then open a terminal **in any directory** and run `picocli`. On first launch (no API key yet) the provider setup opens automatically — pick a provider, paste the key, done. Keys can also come from environment variables (see Configuration below).
+
+### Windows: `pip install` and PATH
+
+`pip --user` installs (the default when site-packages isn't writable) drop the commands into `~/.local`-style user Scripts, which is often **not** on PATH — that's when `picocli` is "not recognized". Prefer `pipx`/`uv tool` above, or add the dir once (then open a fresh terminal):
+
+```powershell
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+$newDir = "$env:APPDATA\Python\Python314\Scripts"  # adjust version to yours
+if ($userPath -split ";" -notcontains $newDir) {
+  [Environment]::SetEnvironmentVariable("Path", "$userPath;$newDir", "User")
+}
+```
 
 ### From source (contributors)
 

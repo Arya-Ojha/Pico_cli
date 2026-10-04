@@ -357,10 +357,20 @@ class PicoApp(App[None]):
         ("f1", "show_help", "Help"),
     ]
 
-    def __init__(self, mgr: _SessionManager, *, startup_notice: str = "") -> None:
+    def __init__(
+        self,
+        mgr: _SessionManager,
+        *,
+        startup_notice: str = "",
+        auto_setup: bool = False,
+    ) -> None:
         super().__init__()
         self._mgr = mgr
         self._startup_notice = startup_notice
+        # First-run onboarding: when True and the active provider is
+        # missing required config, the provider picker opens on launch
+        # so keys/URLs are entered in-UI instead of discovered via /help.
+        self._auto_setup = auto_setup
         self._streaming = False
         # Everything written to the chat log, in order. Thinking blocks are
         # stored as ThinkingSegment so they can collapse/expand on click.
@@ -399,6 +409,10 @@ class PicoApp(App[None]):
             self._write_chat(
                 Panel(self._startup_notice, title="setup", border_style="yellow")
             )
+        if self._auto_setup:
+            settings = self._mgr.session.settings
+            if missing_required(settings.provider, settings):
+                self.call_after_refresh(self._show_provider_picker)
 
     def _refresh_todo_panel(self) -> None:
         """Re-render the todo side panel (auto-hides while empty)."""
@@ -955,7 +969,7 @@ def main(argv: list[str] | None = None) -> int:
             f"Provider {provider_label} is missing required config: "
             f"{', '.join(missing)}. Use /provider to configure it."
         )
-    app = PicoApp(mgr, startup_notice=startup_notice)
+    app = PicoApp(mgr, startup_notice=startup_notice, auto_setup=True)
     app.run()
     return 0
 
